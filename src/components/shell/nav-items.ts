@@ -33,7 +33,7 @@ export const NAV: NavSection[] = [
   {
     label: "Back office",
     items: [
-      { href: "/payroll", label: "Payroll", icon: "users", anyOf: ["employees:view", "payroll:attendance", "payroll:run"], phase: 7 },
+      { href: "/payroll", label: "Payroll", icon: "users", anyOf: ["employees:view", "payroll:attendance", "payroll:run", "reports:payroll:view"] },
       { href: "/banking", label: "Banking", icon: "landmark", anyOf: ["banking:view"] },
       { href: "/ledger", label: "Ledger", icon: "book", anyOf: ["ledger:view"] },
       { href: "/reports", label: "Reports", icon: "chart", anyOf: ["reports:sales:view", "reports:pnl:view", "reports:balance-sheet:view", "reports:inventory:view", "reports:payroll:view", "ledger:view"] },

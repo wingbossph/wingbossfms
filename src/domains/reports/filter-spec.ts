@@ -42,6 +42,11 @@ export async function filterSpecFor(def: ReportDef, user: CurrentUser, p: Report
     spec.sources = Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label }));
     spec.source = p.source;
   }
+  if (f.has("run")) {
+    const runs = await db.payrollRun.findMany({ where: { status: { not: "VOIDED" } }, orderBy: { periodEnd: "desc" }, take: 48 });
+    const label = (r: (typeof runs)[number]) => `${r.type === "THIRTEENTH_MONTH" ? "13th month " : ""}${r.periodStart.toISOString().slice(0, 10)} to ${r.periodEnd.toISOString().slice(0, 10)}${r.status === "DRAFT" ? " (draft)" : ""}`;
+    spec.extra = [...(spec.extra ?? []), { param: "run", label: "Payroll", value: p.run ?? runs.find((r) => r.status === "POSTED")?.id ?? "", options: runs.map((r) => ({ value: r.id, label: label(r) })) }];
+  }
   if (f.has("moneyAccount")) {
     const accounts = await statementAccountsFor(user, def.permission);
     spec.extra = [...(spec.extra ?? []), { param: "moneyAccount", label: "Account", value: p.moneyAccount ?? "", options: [{ value: "", label: "Choose…" }, ...accounts.map((a) => ({ value: a.id, label: a.name }))] }];

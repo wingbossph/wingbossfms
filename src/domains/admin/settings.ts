@@ -23,6 +23,14 @@ export const SETTING_DEFAULTS = {
   "alerts.personalGcashShareBp": 3000,
   "alerts.cashShortThresholdCents": "20000",
   "reports.emailRecipients": "" as string,
+  /** Payroll: the regular shift (for times typed in the DTR grid). */
+  "payroll.shiftStart": "10:00" as string,
+  "payroll.shiftEnd": "19:00" as string,
+  "payroll.graceMinutes": 0,
+  "payroll.otMinimumMinutes": 30,
+  /** Pay day for the 1–15 cut-off (this month) and the 16–end cut-off (next month). */
+  "payroll.firstPayDay": 20,
+  "payroll.secondPayDay": 5,
   /** Auto-match: how many days apart a statement line and a book entry may be. */
   "bank.matchWindowDays": 3,
   /** Channel payouts auto-match when within this share of gross (real MDR vs the configured rate). */

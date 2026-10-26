@@ -7,6 +7,7 @@ import { UserFacingError } from "@/lib/errors";
 import { buildBalanceSheet, buildCashFlow, buildEquityStatement, buildPnl, buildTrialBalance, combine, loadBalances, loadChart, profitOf } from "./financials";
 import { asOfOf, dayBefore, fmtDate, fmtRange, monthsIn, rangeOf, type ReportParams } from "./params";
 import { buildGeneralLedger, buildJournal } from "./ledger-reports";
+import { payrollRegisterDoc, remittancesDoc } from "./payroll-reports";
 import { bankReconciliationDoc, channelSettlementsDoc } from "./banking-reports";
 import { canUseAccount } from "@/domains/banking/queries";
 import { commissaryStatement, stockOnHand, transfersReport, usageReport, varianceDoc, wasteReport } from "./inventory-reports";
@@ -229,6 +230,29 @@ Object.assign(REPORTS, {
     async build(user, p) {
       const { from, to } = rangeOf(p);
       return commissaryStatement(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+  "payroll-register": {
+    title: "Payroll register",
+    group: "Payroll",
+    description: "Every payslip of a payroll run: pay, deductions, net and employer share.",
+    permission: "reports:payroll:view",
+    filters: ["run", "location"],
+    async build(user, p) {
+      const run = p.run ? await db.payrollRun.findUnique({ where: { id: p.run } }) : await db.payrollRun.findFirst({ where: { status: "POSTED" }, orderBy: { periodEnd: "desc" } });
+      if (!run) throw new UserFacingError("No payroll runs yet.");
+      return payrollRegisterDoc(await reportScope(user, "reports:payroll:view", p), run.id);
+    },
+  },
+  "payroll-remittances": {
+    title: "Government remittances",
+    group: "Payroll",
+    description: "SSS, PhilHealth, Pag-IBIG and withholding tax per employee, for the monthly forms.",
+    permission: "reports:payroll:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return remittancesDoc(await reportScope(user, "reports:payroll:view", p), from, to);
     },
   },
   "bank-reconciliation": {
