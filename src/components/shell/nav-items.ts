@@ -23,8 +23,8 @@ export const NAV: NavSection[] = [
   {
     label: "Daily operations",
     items: [
-      { href: "/sales", label: "Sales", icon: "receipt", anyOf: ["sales:view", "sales:create"], phase: 2 },
-      { href: "/cash", label: "Cash & deposits", icon: "wallet", anyOf: ["cash:count", "cash:deposit", "money:view"], phase: 2 },
+      { href: "/sales", label: "Sales", icon: "receipt", anyOf: ["sales:view", "sales:create"] },
+      { href: "/cash", label: "Cash & deposits", icon: "wallet", anyOf: ["cash:count", "cash:deposit", "money:view", "money:transfer"] },
       { href: "/expenses", label: "Expenses", icon: "banknote", anyOf: ["expenses:view", "expenses:create"], phase: 3 },
       { href: "/inventory", label: "Inventory", icon: "boxes", anyOf: ["inventory:view", "inventory:count"], phase: 5 },
       { href: "/commissary", label: "Commissary", icon: "truck", anyOf: ["production:create", "transfers:create", "transfers:receive"], phase: 5 },
@@ -42,6 +42,9 @@ export const NAV: NavSection[] = [
   {
     label: "Administration",
     items: [
+      { href: "/admin/adjustments", label: "Correction requests", icon: "inbox", anyOf: ["adjustments:approve"] },
+      { href: "/admin/menu", label: "Menu & prices", icon: "utensils", anyOf: ["settings:manage"] },
+      { href: "/admin/payments", label: "Payments & settings", icon: "credit-card", anyOf: ["settings:manage"] },
       { href: "/admin/locations", label: "Locations", icon: "store", anyOf: ["locations:view"] },
       { href: "/admin/users", label: "Users", icon: "user-cog", anyOf: ["users:view"] },
       { href: "/admin/roles", label: "Roles & permissions", icon: "shield", anyOf: ["roles:manage"] },

@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:integration": "vitest run --config vitest.integration.config.mts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
@@ -29,6 +30,7 @@
     "next": "15.5.28",
     "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.6",
+    "papaparse": "^5.7.0",
     "pg": "^8.23.1",
     "prisma": "^7.10.1",
     "radix-ui": "^1.8.1",
@@ -43,6 +45,7 @@
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.5",
+    "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",

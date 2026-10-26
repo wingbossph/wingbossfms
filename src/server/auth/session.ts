@@ -141,6 +141,19 @@ export async function getActiveLocationId(user: CurrentUser): Promise<string> {
   return ids[0] ?? ALL_LOCATIONS;
 }
 
+/** Location ids where the user has any of the permissions. */
+export function locationsWithAny(user: CurrentUser, ...permissions: string[]): string[] {
+  const set = new Set(permissions.flatMap((p) => user.access.locationsWith(p)));
+  return user.locations.map((l) => l.id).filter((id) => set.has(id));
+}
+
+/** Like scopeLocations, for screens that several permissions open. */
+export function scopeLocationsAny(user: CurrentUser, permissions: string[], requested: string | null | undefined): string[] {
+  const allowed = locationsWithAny(user, ...permissions);
+  if (!requested || requested === ALL_LOCATIONS) return allowed;
+  return allowed.includes(requested) ? [requested] : [];
+}
+
 /**
  * Resolves a location filter from the UI into the ids the user may see for
  * `permission`. Never trusts the client: unknown ids are dropped.

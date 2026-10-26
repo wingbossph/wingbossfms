@@ -104,11 +104,12 @@ export const ACCOUNTS: AccountDef[] = [
   { code: "4040", name: "Take-out and delivery", group: "REVENUE", systemKey: "REV_TAKEOUT" },
   { code: "4050", name: "Service charge income", group: "REVENUE", systemKey: "REV_SERVICE_CHARGE" },
   { code: "4090", name: "Other income", group: "REVENUE", systemKey: "REV_OTHER" },
-  { code: "4100", name: "Inter-location sales (eliminated)", group: "REVENUE", systemKey: "INTERCO_SALES", isIntercompany: true },
+  { code: "4100", name: "Inter-location markup income (eliminated)", group: "REVENUE", systemKey: "INTERCO_MARKUP_INCOME", isIntercompany: true },
   { code: "4510", name: "SC / PWD discounts", group: "CONTRA_REVENUE", systemKey: "DISC_SC_PWD" },
   { code: "4520", name: "Promo and voucher discounts", group: "CONTRA_REVENUE", systemKey: "DISC_PROMO" },
   { code: "4530", name: "Comps and employee meals", group: "CONTRA_REVENUE", systemKey: "DISC_COMPS" },
   { code: "4540", name: "Delivery platform commissions", group: "CONTRA_REVENUE", systemKey: "PLATFORM_COMMISSIONS" },
+  { code: "4550", name: "Refunds", group: "CONTRA_REVENUE", systemKey: "DISC_REFUNDS" },
 
   // ── COGS ─────────────────────────────────────────────────────────────────
   { code: "5010", name: "Chicken wings", group: "COGS", systemKey: "COGS_WINGS" },
@@ -122,7 +123,7 @@ export const ACCOUNTS: AccountDef[] = [
   { code: "5090", name: "Commissary transfers-in", group: "COGS", systemKey: "COGS_COMMISSARY" },
   { code: "5095", name: "Waste and spoilage", group: "COGS", systemKey: "COGS_WASTE" },
   { code: "5096", name: "Transfer losses", group: "COGS", systemKey: "COGS_TRANSFER_LOSS" },
-  { code: "5099", name: "Inter-location cost of sales (eliminated)", group: "COGS", systemKey: "INTERCO_COGS", isIntercompany: true },
+  { code: "5099", name: "Inter-location markup charges (eliminated)", group: "COGS", systemKey: "INTERCO_MARKUP_CHARGES", isIntercompany: true },
 
   // ── Payroll ──────────────────────────────────────────────────────────────
   { code: "6010", name: "Basic salaries", group: "PAYROLL", systemKey: "PAY_BASIC" },
@@ -156,6 +157,7 @@ export const ACCOUNTS: AccountDef[] = [
   { code: "6650", name: "Software subscriptions", group: "ADMIN" },
   { code: "6660", name: "Percentage tax", group: "ADMIN", systemKey: "PERCENTAGE_TAX" },
   { code: "6690", name: "Cash over / short", group: "ADMIN", systemKey: "CASH_OVER_SHORT" },
+  { code: "6695", name: "Production overhead absorbed (commissary)", group: "ADMIN", systemKey: "OVERHEAD_ABSORBED" },
   { code: "6710", name: "Commissary to branch delivery", group: "TRANSPORT" },
   { code: "6720", name: "Fuel", group: "TRANSPORT" },
   { code: "6730", name: "Grab / Lalamove", group: "TRANSPORT" },

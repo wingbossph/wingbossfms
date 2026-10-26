@@ -144,12 +144,40 @@
   min-width: 3rem;
 }
 
+/* Printing: reports on A4, shift-close slips on 80 mm thermal paper. */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+@page thermal {
+  size: 80mm auto;
+  margin: 2mm;
+}
+.thermal {
+  page: thermal;
+}
 @media print {
   .no-print {
     display: none !important;
   }
+  html,
   body {
-    background: white;
-    color: black;
+    background: white !important;
+    color: black !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  table {
+    font-size: 10pt;
+  }
+  tr,
+  td,
+  th {
+    break-inside: avoid;
+  }
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
   }
 }

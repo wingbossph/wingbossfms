@@ -68,11 +68,12 @@ export async function writeAudit(tx: Tx, entry: AuditEntry) {
 }
 
 /** Only the fields that changed, for compact before/after records. */
-export function diffFields<T extends Record<string, unknown>>(before: T, after: Partial<T>) {
+export function diffFields(before: object, after: Record<string, unknown>) {
+  const prevValues = before as Record<string, unknown>;
   const b: Record<string, unknown> = {};
   const a: Record<string, unknown> = {};
   for (const key of Object.keys(after)) {
-    const prev = toAuditJson(before[key]);
+    const prev = toAuditJson(prevValues[key]);
     const next = toAuditJson(after[key]);
     if (JSON.stringify(prev) !== JSON.stringify(next)) {
       b[key] = prev;

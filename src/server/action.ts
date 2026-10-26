@@ -2,6 +2,9 @@ import "server-only";
 import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { AuthorizationError } from "@/server/auth/session";
+import { UserFacingError } from "@/lib/errors";
+
+export { UserFacingError };
 
 export type ActionState = {
   ok: boolean;
@@ -29,6 +32,3 @@ export async function handleAction(fn: () => Promise<ActionState | void>): Promi
     return { ok: false, message: "Something went wrong. Please try again." };
   }
 }
-
-/** An error whose message is safe to show the user as-is. */
-export class UserFacingError extends Error {}

@@ -8,6 +8,9 @@ import {
   BookOpen,
   Boxes,
   ChartColumn,
+  CreditCard,
+  Inbox,
+  UtensilsCrossed,
   Gauge,
   History,
   Home,
@@ -42,6 +45,9 @@ const ICONS: Record<string, LucideIcon> = {
   shield: Shield,
   tablet: Tablet,
   history: History,
+  inbox: Inbox,
+  utensils: UtensilsCrossed,
+  "credit-card": CreditCard,
 };
 
 export function SidebarNav({ sections, onNavigate }: { sections: NavSection[]; onNavigate?: () => void }) {
