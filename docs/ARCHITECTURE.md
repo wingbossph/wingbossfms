@@ -1,6 +1,6 @@
 # Wingboss FMS: Architecture Proposal (pre-Phase 1)
 
-Status: **draft for owner review.** No application code has been written yet.
+Status: **Phase 1 built** on the defaults in [`QUESTIONS.md`](./QUESTIONS.md).
 
 - (a) Database schema: [`prisma/schema.prisma`](../prisma/schema.prisma) (Prisma 7, validated)
 - (b) Folder structure: section 4 below
@@ -26,7 +26,7 @@ Status: **draft for owner review.** No application code has been written yet.
 | 12 | **PIN login only on a registered branch device** (device token cookie). The session is pinned to that device's location, with a 15-min idle timeout. | A PIN alone is weak (10k–1M combinations). Binding it to a device plus rate limiting makes it safe enough. |
 | 13 | **`DailySummary` table** per location per day, refreshed inside posting transactions. | Dashboard < 2 s over 3 years × 10 branches without materialized-view refresh jobs. |
 | 14 | **Government tables, holidays and tax rates are data.** Generic bracket rows cover SSS, PhilHealth, Pag-IBIG and TRAIN. | Rates change yearly. Updating them is a data edit, not a deployment. |
-| 15 | Auth.js v5 (credentials provider, JWT sessions, `sessionVersion` revocation). Prisma 7 (`prisma-client` generator, `prisma.config.ts`). Supabase Storage for photos. | Current stable choices that run on Vercel serverless. |
+| 15 | Auth.js v5 (credentials provider, JWT sessions, `sessionVersion` revocation, sliding idle timeout). Prisma 7 (`prisma-client` generator, `prisma.config.ts`, `@prisma/adapter-pg`). TanStack Table v8. Supabase Storage for photos. | Current stable choices that run on Vercel serverless. |
 
 ## 2. ERD (core relationships)
 
