@@ -23,6 +23,9 @@ export const SETTING_DEFAULTS = {
   "alerts.personalGcashShareBp": 3000,
   "alerts.cashShortThresholdCents": "20000",
   "reports.emailRecipients": "" as string,
+  /** Email a daily sales summary each morning and the monthly P&L on the 1st. */
+  "reports.dailySalesEmail": true,
+  "reports.monthlyPnlEmail": true,
   /** Payroll: the regular shift (for times typed in the DTR grid). */
   "payroll.shiftStart": "10:00" as string,
   "payroll.shiftEnd": "19:00" as string,

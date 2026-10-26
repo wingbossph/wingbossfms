@@ -7,6 +7,8 @@ import { UserFacingError } from "@/lib/errors";
 import { buildBalanceSheet, buildCashFlow, buildEquityStatement, buildPnl, buildTrialBalance, combine, loadBalances, loadChart, profitOf } from "./financials";
 import { asOfOf, dayBefore, fmtDate, fmtRange, monthsIn, rangeOf, type ReportParams } from "./params";
 import { buildGeneralLedger, buildJournal } from "./ledger-reports";
+import { dailySalesDoc, discountsLogDoc, salesByCashierDoc, salesByChannelDoc, salesByPackageDoc, salesByTimeDoc } from "./sales-reports";
+import { apAgingDoc, breakEvenDoc, budgetVsActualDoc, cashPositionDoc, expensesByCategoryDoc, expensesBySupplierDoc } from "./expense-reports";
 import { payrollRegisterDoc, remittancesDoc } from "./payroll-reports";
 import { bankReconciliationDoc, channelSettlementsDoc } from "./banking-reports";
 import { canUseAccount } from "@/domains/banking/queries";
@@ -230,6 +232,137 @@ Object.assign(REPORTS, {
     async build(user, p) {
       const { from, to } = rangeOf(p);
       return commissaryStatement(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+  "daily-sales": {
+    title: "Daily sales summary",
+    group: "Sales",
+    description: "Gross, discounts, net sales, pax and cash over/short per day.",
+    permission: "reports:sales:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return dailySalesDoc(await reportScope(user, "reports:sales:view", p), from, to);
+    },
+  },
+  "sales-by-package": {
+    title: "Sales by package",
+    group: "Sales",
+    description: "Quantity, pax and sales per package and product.",
+    permission: "reports:sales:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return salesByPackageDoc(await reportScope(user, "reports:sales:view", p), from, to);
+    },
+  },
+  "sales-by-channel": {
+    title: "Sales by payment channel",
+    group: "Sales",
+    description: "Cash, card, QR, GCash (business and personal), bank transfer and Grab, per location.",
+    permission: "reports:sales:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return salesByChannelDoc(await reportScope(user, "reports:sales:view", p), from, to);
+    },
+  },
+  "sales-by-cashier": {
+    title: "Sales by cashier",
+    group: "Sales",
+    description: "Net sales per cashier from Loyverse receipts or manual entry.",
+    permission: "reports:sales:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return salesByCashierDoc(await reportScope(user, "reports:sales:view", p), from, to);
+    },
+  },
+  "sales-by-time": {
+    title: "Sales by weekday and hour",
+    group: "Sales",
+    description: "Busiest days of the week and hours of the day.",
+    permission: "reports:sales:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return salesByTimeDoc(await reportScope(user, "reports:sales:view", p), from, to);
+    },
+  },
+  "discounts-log": {
+    title: "Discounts and SC/PWD log",
+    group: "Sales",
+    description: "Every discount with senior citizen / PWD name and ID number.",
+    permission: "reports:sales:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return discountsLogDoc(await reportScope(user, "reports:sales:view", p), from, to);
+    },
+  },
+  "expenses-by-category": {
+    title: "Expenses by category",
+    group: "Expenses",
+    description: "Costs by category and account, per location, with % of sales.",
+    permission: "reports:pnl:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return expensesByCategoryDoc(await reportScope(user, "reports:pnl:view", p), from, to);
+    },
+  },
+  "expenses-by-supplier": {
+    title: "Expenses by supplier",
+    group: "Expenses",
+    description: "What you bought from each supplier, paid and unpaid.",
+    permission: "payables:manage",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return expensesBySupplierDoc(await reportScope(user, "payables:manage", p), from, to);
+    },
+  },
+  "ap-aging": {
+    title: "Accounts payable aging",
+    group: "Expenses",
+    description: "Unpaid supplier bills by how long they are past due.",
+    permission: "payables:manage",
+    filters: ["asOf", "location"],
+    async build(user, p) {
+      return apAgingDoc(await reportScope(user, "payables:manage", p), asOfOf(p));
+    },
+  },
+  "cash-position": {
+    title: "Daily cash position",
+    group: "Financial statements",
+    description: "Cash drawers, undeposited cash, banks and e-wallets day by day.",
+    permission: "reports:balance-sheet:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return cashPositionDoc(await reportScope(user, "reports:balance-sheet:view", p), from, to);
+    },
+  },
+  "budget-vs-actual": {
+    title: "Budget vs actual",
+    group: "Planning",
+    description: "Monthly budget per account against what actually happened.",
+    permission: "reports:pnl:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return budgetVsActualDoc(await reportScope(user, "reports:pnl:view", p), from, to);
+    },
+  },
+  "break-even": {
+    title: "Break-even analysis",
+    group: "Planning",
+    description: "Pax needed per month and per day for each branch to cover fixed costs.",
+    permission: "reports:pnl:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return breakEvenDoc(await reportScope(user, "reports:pnl:view", p), from, to);
     },
   },
   "payroll-register": {

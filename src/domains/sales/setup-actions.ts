@@ -333,6 +333,16 @@ const EDITABLE_SETTINGS = {
   "alerts.personalGcashShareBp": z.number().int().min(0).max(10000),
   "alerts.cashShortThresholdCents": z.string().regex(/^\d+$/),
   "reports.emailRecipients": z.string().trim().max(500),
+  "reports.dailySalesEmail": z.boolean(),
+  "reports.monthlyPnlEmail": z.boolean(),
+  "payroll.shiftStart": z.string().regex(/^\d{2}:\d{2}$/),
+  "payroll.shiftEnd": z.string().regex(/^\d{2}:\d{2}$/),
+  "payroll.graceMinutes": z.number().int().min(0).max(60),
+  "payroll.otMinimumMinutes": z.number().int().min(0).max(240),
+  "payroll.firstPayDay": z.number().int().min(16).max(31),
+  "payroll.secondPayDay": z.number().int().min(1).max(15),
+  "bank.matchWindowDays": z.number().int().min(0).max(10),
+  "bank.settlementToleranceBp": z.number().int().min(0).max(1000),
 } satisfies Partial<Record<SettingKey, z.ZodType>>;
 
 const settingSchema = z.object({

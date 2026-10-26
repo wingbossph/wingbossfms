@@ -17,7 +17,7 @@ export const NAV: NavSection[] = [
     label: "Overview",
     items: [
       { href: "/", label: "Home", icon: "home", anyOf: [] },
-      { href: "/dashboard", label: "Dashboard", icon: "gauge", anyOf: ["dashboard:view"], phase: 8 },
+      { href: "/dashboard", label: "Dashboard", icon: "gauge", anyOf: ["dashboard:view"] },
     ],
   },
   {
@@ -44,7 +44,8 @@ export const NAV: NavSection[] = [
     items: [
       { href: "/admin/adjustments", label: "Correction requests", icon: "inbox", anyOf: ["adjustments:approve"] },
       { href: "/admin/menu", label: "Menu & prices", icon: "utensils", anyOf: ["settings:manage"] },
-      { href: "/admin/payments", label: "Payments & settings", icon: "credit-card", anyOf: ["settings:manage"] },
+      { href: "/admin/payments", label: "Payments & branch settings", icon: "credit-card", anyOf: ["settings:manage"] },
+      { href: "/admin/settings", label: "Business settings", icon: "sliders", anyOf: ["settings:manage"] },
       { href: "/admin/locations", label: "Locations", icon: "store", anyOf: ["locations:view"] },
       { href: "/admin/users", label: "Users", icon: "user-cog", anyOf: ["users:view"] },
       { href: "/admin/roles", label: "Roles & permissions", icon: "shield", anyOf: ["roles:manage"] },

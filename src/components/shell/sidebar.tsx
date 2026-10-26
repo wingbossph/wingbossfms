@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  SlidersHorizontal,
   Banknote,
   BookOpen,
   Boxes,
@@ -48,6 +49,7 @@ const ICONS: Record<string, LucideIcon> = {
   inbox: Inbox,
   utensils: UtensilsCrossed,
   "credit-card": CreditCard,
+  sliders: SlidersHorizontal,
 };
 
 export function SidebarNav({ sections, onNavigate }: { sections: NavSection[]; onNavigate?: () => void }) {

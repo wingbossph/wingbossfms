@@ -18,6 +18,13 @@ export default async function ReportsPage() {
         {groups.map((g) => (
           <section key={g}>
             <h2 className="mb-3 text-2xl">{g}</h2>
+            {g === "Planning" && (
+              <p className="mb-3 text-sm">
+                <Link href="/reports/budget" className="underline underline-offset-4">
+                  Set the monthly budget
+                </Link>
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {visible
                 .filter(([, d]) => d.group === g)
