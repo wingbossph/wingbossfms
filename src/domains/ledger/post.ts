@@ -6,7 +6,7 @@ import type { JournalSource } from "@/generated/prisma/enums";
 import type { Tx } from "@/server/db";
 import { UserFacingError } from "@/lib/errors";
 import { toDbDate } from "@/lib/dates";
-import { assertBalanced, consolidate, reverseLines, type DraftLine } from "./lines";
+import { assertBalanced, assertBalancedPerLocation, consolidate, reverseLines, type DraftLine } from "./lines";
 
 export type PostInput = {
   /** Business date "YYYY-MM-DD" (Asia/Manila). */
@@ -63,6 +63,7 @@ async function resolveAccounts(tx: Tx, lines: readonly DraftLine[]) {
 export async function postEntry(tx: Tx, input: PostInput): Promise<string> {
   const lines = consolidate(input.lines).filter((l) => l.debitCents !== 0n || l.creditCents !== 0n);
   assertBalanced(lines);
+  assertBalancedPerLocation(lines);
   const period = await openPeriodFor(tx, input.date);
   const lookup = await resolveAccounts(tx, lines);
   const date = toDbDate(input.date);

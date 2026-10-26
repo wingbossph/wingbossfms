@@ -43,8 +43,11 @@ export function totals(lines: readonly DraftLine[]) {
 }
 
 export class UnbalancedEntryError extends Error {
-  constructor(public difference: bigint) {
-    super(`Journal entry is not balanced (difference ${difference} centavos)`);
+  constructor(
+    public difference: bigint,
+    public locationId?: string,
+  ) {
+    super(`Journal entry is not balanced${locationId ? " for one location" : ""} (difference ${difference} centavos)`);
     this.name = "UnbalancedEntryError";
   }
 }
@@ -58,6 +61,19 @@ export function assertBalanced(lines: readonly DraftLine[]) {
   }
   const { difference } = totals(lines);
   if (difference !== 0n) throw new UnbalancedEntryError(difference);
+}
+
+/**
+ * Each location's lines must balance on their own, so every location has a
+ * complete, balancing set of books. Movements between locations go through
+ * the inter-location receivable/payable accounts.
+ */
+export function assertBalancedPerLocation(lines: readonly DraftLine[]) {
+  const byLocation = new Map<string, bigint>();
+  for (const l of lines) byLocation.set(l.locationId, (byLocation.get(l.locationId) ?? 0n) + l.debitCents - l.creditCents);
+  for (const [locationId, diff] of byLocation) {
+    if (diff !== 0n) throw new UnbalancedEntryError(diff, locationId);
+  }
 }
 
 /** Reversal lines: debits become credits and vice versa. */

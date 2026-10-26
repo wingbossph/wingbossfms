@@ -78,3 +78,13 @@ describe("sales arithmetic", () => {
     expect(lines.find((l) => "key" in l.account && l.account.key === "CASH_OVER_SHORT")?.debitCents).toBe(1000n);
   });
 });
+
+describe("per-location balance", () => {
+  it("rejects an entry that moves value between locations without inter-location accounts", async () => {
+    const { assertBalancedPerLocation } = await import("@/domains/ledger/lines");
+    expect(() => assertBalancedPerLocation([...dr(key("A"), "MAT", 100n), ...cr(key("B"), "LAN", 100n)])).toThrow(/one location/);
+    expect(() =>
+      assertBalancedPerLocation([...dr(key("INTERCO_RECEIVABLE"), "COM", 100n), ...cr(key("INV"), "COM", 100n), ...dr(key("INV"), "LAN", 100n), ...cr(key("INTERCO_PAYABLE"), "LAN", 100n)]),
+    ).not.toThrow();
+  });
+});

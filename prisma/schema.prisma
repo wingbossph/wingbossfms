@@ -588,9 +588,18 @@ model OwnerEquityTransaction {
 /// Optional, OFF by default. Spreads a cost posted at sourceLocation
 /// (e.g. Head Office) to other locations by fixed %, as separate
 /// ALLOCATION journal entries, so P&L can show "direct" vs "after allocation".
+enum AllocationMethod {
+  /// Fixed % per location (shares sum to 100%).
+  FIXED_SHARES
+  /// In proportion to the value of transfers each location received that month
+  /// (spreads the commissary's net cost to the branches it supplied).
+  TRANSFER_VALUE
+}
+
 model AllocationRule {
   id               String            @id @default(cuid())
   name             String
+  method           AllocationMethod  @default(FIXED_SHARES)
   isActive         Boolean           @default(false)
   sourceLocationId String
   sourceLocation   Location          @relation(fields: [sourceLocationId], references: [id])
