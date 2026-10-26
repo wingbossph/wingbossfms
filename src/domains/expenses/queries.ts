@@ -23,7 +23,14 @@ export async function expenseCategories() {
     where: { section: { in: ["COGS", "LABOR", "OPERATING_EXPENSE", "OTHER_INCOME_EXPENSE", "INCOME_TAX", "NONCURRENT_ASSET", "CURRENT_ASSET"] } },
     include: {
       accounts: {
-        where: { isPostable: true, isActive: true, isIntercompany: false, moneyAccount: null, NOT: { systemKey: { in: ["ACCUM_DEPRECIATION", "INTERCO_RECEIVABLE", "EMPLOYEE_ADVANCES", "CREDITABLE_WHT"] } } },
+        where: {
+          isPostable: true,
+          isActive: true,
+          isIntercompany: false,
+          moneyAccount: null,
+          // Explicit null branch: SQL "NOT IN" would also drop accounts without a system key.
+          OR: [{ systemKey: null }, { systemKey: { notIn: ["ACCUM_DEPRECIATION", "INTERCO_RECEIVABLE", "EMPLOYEE_ADVANCES", "CREDITABLE_WHT"] } }],
+        },
         orderBy: { code: "asc" },
       },
     },
@@ -31,12 +38,11 @@ export async function expenseCategories() {
   });
   // Assets: only prepaid, deposits and equipment purchases (inventory is bought via items).
   return groups
+    .filter((g) => !["CASH", "RECEIVABLES", "INVENTORY"].includes(g.code))
     .map((g) => ({
       group: g.name,
       groupId: g.id,
-      accounts: g.accounts
-        .filter((a) => !["CASH", "RECEIVABLES", "INVENTORY"].includes(g.code))
-        .map((a) => ({ id: a.id, name: `${a.name}`, code: a.code })),
+      accounts: g.accounts.map((a) => ({ id: a.id, name: a.name, code: a.code })),
     }))
     .filter((g) => g.accounts.length > 0);
 }

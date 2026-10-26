@@ -129,3 +129,13 @@ describe("expenses & payables", () => {
     expect(await trialBalanceDifference()).toBe(0n);
   });
 });
+
+describe("expense categories", () => {
+  it("include accounts without a system key (rent, electricity)", async () => {
+    const { expenseCategories } = await import("@/domains/expenses/queries");
+    const names = (await expenseCategories()).flatMap((g) => g.accounts.map((a) => a.name));
+    expect(names).toEqual(expect.arrayContaining(["Rental", "Electricity", "Cleaning supplies"]));
+    expect(names).not.toContain("Accumulated depreciation");
+    expect(names).not.toContain("Cash drawers");
+  });
+});
