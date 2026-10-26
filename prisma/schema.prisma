@@ -1,0 +1,2037 @@
+// =============================================================================
+// Wingboss FMS — PROPOSED schema (pre-Phase 1 review draft)
+// =============================================================================
+// Conventions
+// - Money: BigInt centavos, field names end in `Cents`. Never floats.
+// - Quantities: Decimal(18,4) in the item's base unit. Unit costs: Decimal(18,6)
+//   (sub-centavo precision for weighted-average cost per gram/ml).
+// - Rates/percentages: Int basis points (`Bp`): 2000 = 20.00%.
+// - Business dates (a sales day, a count date) are `@db.Date` in Asia/Manila;
+//   instants are `timestamptz`.
+// - Every financial / inventory document belongs to exactly one Location.
+// - Posted records are immutable. They are corrected by void + reversing
+//   entry, or through an AdjustmentRequest. They are never edited in place.
+// - Raw-SQL migration extras (added in Phase 1/4, not expressible in Prisma):
+//   CHECK constraints (debit/credit >= 0, exactly one non-zero), a deferred
+//   constraint trigger that rejects unbalanced journal entries, partial
+//   unique indexes for "one POSTED entry per source", and a trigger that
+//   blocks INSERT/UPDATE of journal lines dated in a CLOSED period.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// 1. ORGANIZATION, LOCATIONS, SETTINGS
+// =============================================================================
+
+enum LocationType {
+  BRANCH
+  COMMISSARY
+  OFFICE
+}
+
+enum TaxMode {
+  NON_VAT
+  VAT
+}
+
+/// A BIR registration (TIN + branch code). Used for percentage tax and the
+/// ₱3M VAT threshold alert. Tax module is deferred; kept minimal for now.
+model TaxEntity {
+  id                  String     @id @default(cuid())
+  registeredName      String
+  tin                 String
+  branchCode          String     @default("000")
+  taxMode             TaxMode    @default(NON_VAT)
+  percentageTaxRateBp Int        @default(300)
+  locations           Location[]
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@unique([tin, branchCode])
+}
+
+model Location {
+  id               String       @id @default(cuid())
+  code             String       @unique // e.g. "MAT", "LAN", "COM", "HO"
+  name             String
+  type             LocationType
+  address          String?
+  openedOn         DateTime?    @db.Date
+  closedOn         DateTime?    @db.Date
+  isActive         Boolean      @default(true)
+  sortOrder        Int          @default(0)
+  taxEntityId      String?
+  taxEntity        TaxEntity?   @relation(fields: [taxEntityId], references: [id])
+  /// Default opening float kept in each cash drawer.
+  drawerFloatCents BigInt       @default(0)
+  /// Loyverse store this location maps to (CSV import + API sync).
+  loyverseStoreId  String?      @unique
+  /// Encrypted Loyverse personal access token (Phase 9 API sync).
+  loyverseTokenEnc String?
+  settings         Json         @default("{}")
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  roleAssignments     RoleAssignment[]
+  userPermissions     UserPermission[]
+  devices             Device[]
+  moneyAccounts       MoneyAccount[]
+  channelLocations    PaymentChannelLocation[]
+  priceLists          PriceList[]
+  salesReports        SalesReport[]
+  expenses            Expense[]
+  recurringExpenses   RecurringExpense[]
+  journalLines        JournalLine[]            @relation("LineLocation")
+  counterpartyLines   JournalLine[]            @relation("LineCounterparty")
+  itemSettings        ItemLocationSetting[]
+  stockBalances       StockBalance[]
+  stockMovements      StockMovement[]
+  stockCounts         StockCount[]
+  stockAdjustments    StockAdjustment[]
+  productionBatches   ProductionBatch[]
+  transfersOut        Transfer[]               @relation("TransferFrom")
+  transfersIn         Transfer[]               @relation("TransferTo")
+  transferPresetsFrom TransferPreset[]         @relation("PresetFrom")
+  transferPresetsTo   TransferPreset[]         @relation("PresetTo")
+  employeeAssignments EmployeeAssignment[]
+  attendanceEntries   AttendanceEntry[]
+  attendanceSheets    AttendanceSheet[]
+  payrollLineItems    PayrollLineItem[]
+  fixedAssets         FixedAsset[]
+  budgetLines         BudgetLine[]
+  allocationShares    AllocationShare[]
+  allocationSources   AllocationRule[]
+  pettyCashFunds      PettyCashFund[]
+  channelSettlements  ChannelSettlement[]
+  loyverseImports     LoyverseImport[]
+  loyverseReceipts    LoyverseReceipt[]
+  loyverseMappings    LoyverseMapping[]
+  holidays            Holiday[]
+  dailySummaries      DailySummary[]
+  alerts              Alert[]
+  auditLogs           AuditLog[]
+  approvalRules       ApprovalRule[]
+  ownerEquityTxns     OwnerEquityTransaction[]
+}
+
+/// Key/value settings; locationId = null means global. Values validated by Zod
+/// per key (e.g. "inventory.varianceToleranceBp", "transfer.markupBp").
+model Setting {
+  id          String   @id @default(cuid())
+  key         String
+  locationId  String?
+  value       Json
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@unique([key, locationId])
+}
+
+// =============================================================================
+// 2. USERS, AUTH, RBAC, AUDIT
+// =============================================================================
+
+model User {
+  id             String    @id @default(cuid())
+  email          String?   @unique
+  name           String
+  passwordHash   String?
+  /// 4–6 digit PIN, hashed (argon2). Only accepted from a registered Device.
+  pinHash        String?
+  isOwner        Boolean   @default(false) // break-glass: bypasses RBAC
+  isActive       Boolean   @default(true)
+  /// Incremented to revoke all JWT sessions (password change, deactivate).
+  sessionVersion Int       @default(0)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  roleAssignments RoleAssignment[]
+  permissions     UserPermission[]
+  employee        Employee?
+  auditLogs       AuditLog[]
+  loginAttempts   LoginAttempt[]
+  reportSchedules ReportSchedule[]
+}
+
+/// Role = a named permission template (Owner, Admin, Cashier, Commissary).
+/// Owner edits the matrix in the UI.
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  name        String
+  description String?
+  isSystem    Boolean          @default(false)
+  permissions RolePermission[]
+  assignments RoleAssignment[]
+}
+
+/// Catalogue of permission keys ("expenses:approve", "reports:pnl:view").
+/// Keys are defined in code (src/server/auth/permissions.ts) and synced here
+/// for the UI matrix.
+model Permission {
+  key         String           @id
+  module      String
+  description String
+  roles       RolePermission[]
+  userGrants  UserPermission[]
+}
+
+model RolePermission {
+  roleId        String
+  permissionKey String
+  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([roleId, permissionKey])
+}
+
+/// A user holds a role AT a location (locationId null = all locations).
+/// Effective permissions at location L = union of roles assigned at L or
+/// globally, then per-user ALLOW/DENY overrides.
+model RoleAssignment {
+  id         String    @id @default(cuid())
+  userId     String
+  roleId     String
+  locationId String?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role      @relation(fields: [roleId], references: [id])
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([userId, roleId, locationId])
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+model UserPermission {
+  id            String           @id @default(cuid())
+  userId        String
+  permissionKey String
+  locationId    String?
+  effect        PermissionEffect
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission    Permission       @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+  location      Location?        @relation(fields: [locationId], references: [id])
+
+  @@unique([userId, permissionKey, locationId])
+}
+
+/// Shared branch tablet/phone. Registered once by an admin; stores a
+/// device token cookie. PIN login works only on a registered device, which
+/// also pins the session to that device's location.
+model Device {
+  id                 String    @id @default(cuid())
+  name               String
+  locationId         String
+  location           Location  @relation(fields: [locationId], references: [id])
+  tokenHash          String    @unique
+  idleTimeoutMinutes Int       @default(15)
+  lastSeenAt         DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+}
+
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  identifier String // email or device+pin key
+  ip         String?
+  success    Boolean
+  at         DateTime @default(now())
+
+  @@index([identifier, at])
+  @@index([ip, at])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  SUBMIT
+  APPROVE
+  REJECT
+  VOID
+  POST
+  CLOSE_PERIOD
+  REOPEN_PERIOD
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+}
+
+/// Append-only. Written in the same DB transaction as the change it records.
+model AuditLog {
+  id         String      @id @default(cuid())
+  at         DateTime    @default(now())
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  locationId String?
+  location   Location?   @relation(fields: [locationId], references: [id])
+  action     AuditAction
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  reason     String?
+  ip         String?
+  userAgent  String?
+
+  @@index([entityType, entityId])
+  @@index([locationId, at])
+  @@index([userId, at])
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Correction of a submitted record by a user who can't edit it directly.
+model AdjustmentRequest {
+  id              String        @id @default(cuid())
+  entityType      String
+  entityId        String
+  locationId      String
+  requestedById   String
+  reason          String
+  proposedChanges Json
+  status          RequestStatus @default(PENDING)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewNote      String?
+  createdAt       DateTime      @default(now())
+
+  @@index([status, locationId])
+}
+
+/// e.g. module "expenses", minAmount ₱5,000 → requires "expenses:approve:owner".
+model ApprovalRule {
+  id                 String    @id @default(cuid())
+  module             String
+  locationId         String?
+  location           Location? @relation(fields: [locationId], references: [id])
+  minAmountCents     BigInt
+  requiredPermission String
+  isActive           Boolean   @default(true)
+}
+
+/// Generic file (receipt photo, deposit slip, DTR photo, import file).
+/// Stored in Supabase Storage; this row holds the path and owner.
+model Attachment {
+  id           String   @id @default(cuid())
+  storagePath  String   @unique
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  entityType   String?
+  entityId     String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// =============================================================================
+// 3. GENERAL LEDGER
+// =============================================================================
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum StatementSection {
+  // P&L, in display order
+  REVENUE
+  CONTRA_REVENUE
+  COGS
+  LABOR
+  OPERATING_EXPENSE
+  OTHER_INCOME_EXPENSE
+  INCOME_TAX
+  // Balance sheet
+  CURRENT_ASSET
+  NONCURRENT_ASSET
+  CURRENT_LIABILITY
+  NONCURRENT_LIABILITY
+  EQUITY
+}
+
+enum KpiTag {
+  NONE
+  FOOD_COST
+  LABOR
+  OCCUPANCY
+  DEPRECIATION
+  INTEREST
+  INCOME_TAX
+}
+
+/// Drives report layout: "Utilities", "Marketing", ... Owner-editable.
+model AccountGroup {
+  id         String           @id @default(cuid())
+  code       String           @unique
+  name       String
+  section    StatementSection
+  kpiTag     KpiTag           @default(NONE)
+  /// True for COGS-like groups whose cost moves with pax (break-even).
+  isVariable Boolean          @default(false)
+  sortOrder  Int              @default(0)
+  accounts   Account[]
+}
+
+/// One global chart of accounts. Location is a dimension on every journal
+/// line, so a new branch needs no new accounts.
+model Account {
+  id             String       @id @default(cuid())
+  code           String       @unique // "6110"
+  name           String
+  type           AccountType
+  groupId        String
+  group          AccountGroup @relation(fields: [groupId], references: [id])
+  parentId       String?
+  parent         Account?     @relation("AccountTree", fields: [parentId], references: [id])
+  children       Account[]    @relation("AccountTree")
+  /// Header accounts (categories) can't be posted to, only subcategories.
+  isPostable     Boolean      @default(true)
+  /// Stable handle for auto-posting, e.g. "INTERCO_RECEIVABLE",
+  /// "CASH_OVER_SHORT", "UNDEPOSITED_CASH". Not editable by users.
+  systemKey      String?      @unique
+  /// Inter-location accounts eliminated in consolidated reports.
+  isIntercompany Boolean      @default(false)
+  isActive       Boolean      @default(true)
+  description    String?
+
+  journalLines      JournalLine[]
+  moneyAccount      MoneyAccount?
+  expenseLines      ExpenseLine[]
+  recurringExpenses RecurringExpense[]
+  products          Product[]
+  discountTypes     DiscountType[]
+  itemsInventory    Item[]             @relation("ItemInventoryAccount")
+  itemsConsumption  Item[]             @relation("ItemConsumptionAccount")
+  budgetLines       BudgetLine[]
+  suppliersDefault  Supplier[]
+  allocationRules   AllocationRule[]
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+model AccountingPeriod {
+  id         String         @id @default(cuid())
+  year       Int
+  month      Int
+  startsOn   DateTime       @db.Date
+  endsOn     DateTime       @db.Date
+  status     PeriodStatus   @default(OPEN)
+  closedById String?
+  closedAt   DateTime?
+  entries    JournalEntry[]
+
+  @@unique([year, month])
+}
+
+enum JournalSource {
+  OPENING_BALANCE
+  SALES_REPORT
+  CASH_COUNT
+  CHANNEL_SETTLEMENT
+  MONEY_TRANSFER
+  EXPENSE
+  EXPENSE_PAYMENT
+  STOCK_RECEIPT
+  STOCK_COUNT
+  STOCK_ADJUSTMENT
+  PRODUCTION
+  TRANSFER_DISPATCH
+  TRANSFER_RECEIVE
+  INTERCO_SETTLEMENT
+  PAYROLL
+  DEPRECIATION
+  ALLOCATION
+  OWNER_EQUITY
+  BANK_LINE
+  MANUAL
+  REVERSAL
+}
+
+enum EntryStatus {
+  POSTED
+  VOIDED
+}
+
+/// Header. Users never type these; posting services in src/domains/*/posting.ts
+/// build them. Manual JEs (Owner/accountant) use source MANUAL.
+model JournalEntry {
+  id         String           @id @default(cuid())
+  number     Int              @unique @default(autoincrement())
+  date       DateTime         @db.Date
+  periodId   String
+  period     AccountingPeriod @relation(fields: [periodId], references: [id])
+  source     JournalSource
+  sourceId   String?
+  memo       String
+  status     EntryStatus      @default(POSTED)
+  /// Set on the reversing entry; points to the entry it cancels.
+  reversesId String?          @unique
+  reverses   JournalEntry?    @relation("Reversal", fields: [reversesId], references: [id])
+  reversedBy JournalEntry?    @relation("Reversal")
+  postedById String?
+  createdAt  DateTime         @default(now())
+  lines      JournalLine[]
+
+  @@index([source, sourceId])
+  @@index([date])
+}
+
+model JournalLine {
+  id                     String          @id @default(cuid())
+  entryId                String
+  entry                  JournalEntry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId              String
+  account                Account         @relation(fields: [accountId], references: [id])
+  locationId             String
+  location               Location        @relation("LineLocation", fields: [locationId], references: [id])
+  /// Other side of an inter-location line (for elimination + statements).
+  counterpartyLocationId String?
+  counterpartyLocation   Location?       @relation("LineCounterparty", fields: [counterpartyLocationId], references: [id])
+  debitCents             BigInt          @default(0)
+  creditCents            BigInt          @default(0)
+  /// Denormalised from entry for fast range queries.
+  date                   DateTime        @db.Date
+  memo                   String?
+  // Optional analysis dimensions
+  supplierId             String?
+  employeeId             String?
+  /// Bank reconciliation: set when this line is cleared.
+  reconciliationId       String?
+  reconciliation         Reconciliation? @relation(fields: [reconciliationId], references: [id])
+  bankMatchItems         BankMatchItem[]
+
+  @@index([accountId, locationId, date])
+  @@index([locationId, date])
+  @@index([entryId])
+}
+
+model FixedAsset {
+  id                  String                   @id @default(cuid())
+  name                String
+  locationId          String
+  location            Location                 @relation(fields: [locationId], references: [id])
+  category            String
+  acquiredOn          DateTime                 @db.Date
+  costCents           BigInt
+  salvageCents        BigInt                   @default(0)
+  usefulLifeMonths    Int
+  assetAccountId      String
+  accumDepAccountId   String
+  depExpenseAccountId String
+  disposedOn          DateTime?                @db.Date
+  isActive            Boolean                  @default(true)
+  depreciations       FixedAssetDepreciation[]
+}
+
+model FixedAssetDepreciation {
+  id             String     @id @default(cuid())
+  assetId        String
+  asset          FixedAsset @relation(fields: [assetId], references: [id])
+  year           Int
+  month          Int
+  amountCents    BigInt
+  journalEntryId String     @unique
+
+  @@unique([assetId, year, month])
+}
+
+enum EquityTxnType {
+  CAPITAL_CONTRIBUTION
+  DRAWING
+}
+
+model OwnerEquityTransaction {
+  id             String        @id @default(cuid())
+  type           EquityTxnType
+  date           DateTime      @db.Date
+  locationId     String
+  location       Location      @relation(fields: [locationId], references: [id])
+  moneyAccountId String
+  moneyAccount   MoneyAccount  @relation(fields: [moneyAccountId], references: [id])
+  amountCents    BigInt
+  memo           String?
+  journalEntryId String?       @unique
+  createdById    String
+  createdAt      DateTime      @default(now())
+}
+
+/// Optional, OFF by default. Spreads a cost posted at sourceLocation
+/// (e.g. Head Office) to other locations by fixed %, as separate
+/// ALLOCATION journal entries, so P&L can show "direct" vs "after allocation".
+model AllocationRule {
+  id               String            @id @default(cuid())
+  name             String
+  isActive         Boolean           @default(false)
+  sourceLocationId String
+  sourceLocation   Location          @relation(fields: [sourceLocationId], references: [id])
+  /// null = all expense accounts at the source location
+  accountId        String?
+  account          Account?          @relation(fields: [accountId], references: [id])
+  shares           AllocationShare[]
+}
+
+model AllocationShare {
+  id         String         @id @default(cuid())
+  ruleId     String
+  rule       AllocationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  locationId String
+  location   Location       @relation(fields: [locationId], references: [id])
+  shareBp    Int // shares of a rule must sum to 10000
+
+  @@unique([ruleId, locationId])
+}
+
+model BudgetLine {
+  id          String   @id @default(cuid())
+  year        Int
+  month       Int
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id])
+  amountCents BigInt
+
+  @@unique([year, month, locationId, accountId])
+}
+
+// =============================================================================
+// 4. MONEY ACCOUNTS & PAYMENT CHANNELS
+// =============================================================================
+
+enum MoneyAccountKind {
+  CASH_DRAWER
+  UNDEPOSITED_CASH
+  PETTY_CASH
+  BANK
+  EWALLET
+  CARD_CLEARING // Maya terminal / merchant wallet
+  PLATFORM_RECEIVABLE // GrabFood
+  OWNER_PERSONAL // owner's own money used for business (owner advance)
+}
+
+/// Every place money sits. Each has its own GL sub-account (auto-created
+/// under Cash & Cash Equivalents / Receivables), so book balance = GL balance.
+model MoneyAccount {
+  id                       String           @id @default(cuid())
+  name                     String // "GCash 1 (09xx…123)"
+  kind                     MoneyAccountKind
+  /// null = shared / head office
+  locationId               String?
+  location                 Location?        @relation(fields: [locationId], references: [id])
+  glAccountId              String           @unique
+  glAccount                Account          @relation(fields: [glAccountId], references: [id])
+  /// GCash in the owner's/staff's personal name: still business money,
+  /// flagged so the dashboard can show how much lands in personal wallets.
+  isPersonal               Boolean          @default(false)
+  institution              String? // BPI, GCash, Maya, Grab
+  accountRef               String? // last 4 digits / mobile number (masked)
+  defaultStatementFormatId String?
+  defaultStatementFormat   StatementFormat? @relation(fields: [defaultStatementFormatId], references: [id])
+  /// Reconciled-and-locked through this date.
+  lockedThrough            DateTime?        @db.Date
+  isActive                 Boolean          @default(true)
+  createdAt                DateTime         @default(now())
+
+  paymentChannels   PaymentChannel[]
+  transfersOut      MoneyTransfer[]          @relation("MoneyFrom")
+  transfersIn       MoneyTransfer[]          @relation("MoneyTo")
+  expensePayments   ExpensePayment[]
+  recurringExpenses RecurringExpense[]
+  pettyCashFund     PettyCashFund?
+  statements        BankStatement[]
+  reconciliations   Reconciliation[]
+  equityTxns        OwnerEquityTransaction[]
+}
+
+enum ChannelKind {
+  CASH
+  CARD
+  QR
+  EWALLET
+  BANK_TRANSFER
+  DELIVERY_PLATFORM
+  OTHER
+}
+
+/// How a customer paid. Maps to the MoneyAccount the money lands in, plus
+/// the fee/settlement terms that create expected receivables.
+model PaymentChannel {
+  id                      String        @id @default(cuid())
+  name                    String // "Maya Card", "GCash 1", "GrabFood"
+  kind                    ChannelKind
+  /// null for CASH → resolves to the location's CASH_DRAWER account.
+  moneyAccountId          String?
+  moneyAccount            MoneyAccount? @relation(fields: [moneyAccountId], references: [id])
+  /// Settles later? (card, QR, Grab). If false, money is there immediately.
+  isDeferred              Boolean       @default(false)
+  feeRateBp               Int           @default(0) // MDR / commission
+  feeFixedCents           BigInt        @default(0)
+  withholdingRateBp       Int           @default(0)
+  settlementDelayDays     Int           @default(0)
+  /// Bank account the clearing/receivable settles into (BPI).
+  settlesToMoneyAccountId String?
+  sortOrder               Int           @default(0)
+  isActive                Boolean       @default(true)
+
+  locations     PaymentChannelLocation[]
+  salesPayments SalesPayment[]
+  settlements   ChannelSettlement[]
+  loyverseMaps  LoyverseMapping[]
+}
+
+model PaymentChannelLocation {
+  channelId  String
+  locationId String
+  channel    PaymentChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  location   Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, locationId])
+}
+
+enum MoneyTransferType {
+  TRANSFER // GCash → BPI, BPI → owner, etc.
+  CASH_DEPOSIT // undeposited cash → bank (with slip photo)
+  PETTY_REPLENISH // bank/drawer → petty cash
+  WITHDRAWAL // bank → drawer/petty
+}
+
+enum DocStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  POSTED
+  VOIDED
+}
+
+model MoneyTransfer {
+  id             String            @id @default(cuid())
+  type           MoneyTransferType
+  date           DateTime          @db.Date
+  fromAccountId  String
+  fromAccount    MoneyAccount      @relation("MoneyFrom", fields: [fromAccountId], references: [id])
+  toAccountId    String
+  toAccount      MoneyAccount      @relation("MoneyTo", fields: [toAccountId], references: [id])
+  amountCents    BigInt
+  feeCents       BigInt            @default(0) // e.g. GCash cash-out fee
+  reference      String? // deposit slip / txn ref no.
+  notes          String?
+  status         DocStatus         @default(POSTED)
+  journalEntryId String?           @unique
+  createdById    String
+  createdAt      DateTime          @default(now())
+}
+
+model PettyCashFund {
+  id              String       @id @default(cuid())
+  locationId      String
+  location        Location     @relation(fields: [locationId], references: [id])
+  moneyAccountId  String       @unique
+  moneyAccount    MoneyAccount @relation(fields: [moneyAccountId], references: [id])
+  imprestCents    BigInt
+  custodianUserId String?
+}
+
+// =============================================================================
+// 5. MENU, PRICES, SALES, SHIFT CLOSE
+// =============================================================================
+
+enum ProductType {
+  PACKAGE // unlimited — counts pax
+  ALA_CARTE
+  ADDON
+  BEVERAGE
+  TAKEOUT
+  OTHER
+}
+
+model Product {
+  id               String      @id @default(cuid())
+  name             String
+  type             ProductType
+  /// Pax counted per unit sold (1 for adult unlimited; Owner may set kids=1).
+  paxPerUnit       Decimal     @default(0) @db.Decimal(6, 2)
+  revenueAccountId String
+  revenueAccount   Account     @relation(fields: [revenueAccountId], references: [id])
+  isActive         Boolean     @default(true)
+  sortOrder        Int         @default(0)
+
+  prices        PriceListItem[]
+  salesLines    SalesLine[]
+  recipes       Recipe[]
+  loyverseMaps  LoyverseMapping[]
+  loyverseLines LoyverseReceiptLine[]
+}
+
+/// locationId null = default list. Most specific active list wins.
+model PriceList {
+  id            String          @id @default(cuid())
+  name          String
+  locationId    String?
+  location      Location?       @relation(fields: [locationId], references: [id])
+  effectiveFrom DateTime        @db.Date
+  effectiveTo   DateTime?       @db.Date
+  items         PriceListItem[]
+}
+
+model PriceListItem {
+  priceListId String
+  productId   String
+  priceCents  BigInt
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id])
+
+  @@id([priceListId, productId])
+}
+
+/// SC, PWD, Promo, Voucher, Employee meal, Comp. Owner-editable.
+model DiscountType {
+  id               String          @id @default(cuid())
+  code             String          @unique
+  name             String
+  defaultRateBp    Int? // 2000 for SC/PWD
+  /// SC/PWD: requires customer name + ID number (BIR log)
+  requiresIdentity Boolean         @default(false)
+  contraAccountId  String
+  contraAccount    Account         @relation(fields: [contraAccountId], references: [id])
+  isActive         Boolean         @default(true)
+  discounts        SalesDiscount[]
+}
+
+enum SalesSource {
+  MANUAL
+  LOYVERSE_CSV
+  LOYVERSE_API
+  MIXED
+}
+
+/// One per location × business date × shift. The unit a cashier submits.
+/// Lines are aggregates (from Loyverse receipts or manual entry).
+model SalesReport {
+  id                  String      @id @default(cuid())
+  locationId          String
+  location            Location    @relation(fields: [locationId], references: [id])
+  businessDate        DateTime    @db.Date
+  shiftNo             Int         @default(1)
+  source              SalesSource @default(MANUAL)
+  status              DocStatus   @default(DRAFT)
+  grossCents          BigInt      @default(0)
+  discountCents       BigInt      @default(0)
+  voidCents           BigInt      @default(0)
+  serviceChargeCents  BigInt      @default(0)
+  netCents            BigInt      @default(0)
+  paymentsCents       BigInt      @default(0)
+  pax                 Decimal     @default(0) @db.Decimal(10, 2)
+  /// Required if net ≠ sum of payments (when the setting allows submit).
+  mismatchExplanation String?
+  cashierUserId       String
+  submittedAt         DateTime?
+  approvedById        String?
+  approvedAt          DateTime?
+  journalEntryId      String?     @unique
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  lines     SalesLine[]
+  discounts SalesDiscount[]
+  voids     SalesVoid[]
+  payments  SalesPayment[]
+  cashCount CashCount?
+  receipts  LoyverseReceipt[]
+  expenses  Expense[] // paid from drawer during this shift
+
+  @@unique([locationId, businessDate, shiftNo])
+  @@index([businessDate])
+}
+
+model SalesLine {
+  id             String      @id @default(cuid())
+  reportId       String
+  report         SalesReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product     @relation(fields: [productId], references: [id])
+  qty            Decimal     @db.Decimal(10, 2)
+  pax            Decimal     @default(0) @db.Decimal(10, 2)
+  unitPriceCents BigInt
+  grossCents     BigInt
+  source         SalesSource @default(MANUAL)
+}
+
+model SalesDiscount {
+  id             String       @id @default(cuid())
+  reportId       String
+  report         SalesReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  discountTypeId String
+  discountType   DiscountType @relation(fields: [discountTypeId], references: [id])
+  amountCents    BigInt
+  /// SC/PWD (BIR log): name, ID no., receipt no.
+  customerName   String?
+  idNumber       String?
+  receiptNo      String?
+  notes          String?
+}
+
+model SalesVoid {
+  id           String      @id @default(cuid())
+  reportId     String
+  report       SalesReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  amountCents  BigInt
+  isRefund     Boolean     @default(false)
+  reason       String
+  receiptNo    String?
+  approvedById String?
+}
+
+model SalesPayment {
+  id          String             @id @default(cuid())
+  reportId    String
+  report      SalesReport        @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  channelId   String
+  channel     PaymentChannel     @relation(fields: [channelId], references: [id])
+  amountCents BigInt
+  reference   String?
+  settlement  ChannelSettlement?
+
+  @@unique([reportId, channelId])
+}
+
+/// Shift close. Expected cash = float + cash sales − drawer expenses ± other.
+/// On submit, cash sales move drawer → UNDEPOSITED_CASH; over/short posts
+/// to CASH_OVER_SHORT.
+model CashCount {
+  id                String      @id @default(cuid())
+  reportId          String      @unique
+  report            SalesReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  openingFloatCents BigInt
+  cashSalesCents    BigInt
+  cashExpensesCents BigInt
+  otherCashInCents  BigInt      @default(0)
+  otherCashOutCents BigInt      @default(0)
+  expectedCents     BigInt
+  countedCents      BigInt
+  overShortCents    BigInt
+  /// {"1000": 3, "500": 4, ..., "coins": 12550}
+  denominations     Json
+  reason            String?
+  countedById       String
+  countedAt         DateTime    @default(now())
+}
+
+enum SettlementStatus {
+  EXPECTED
+  PARTIAL
+  SETTLED
+  DISPUTED
+}
+
+/// Expected payout for deferred channels (Maya card/QR, Grab), one per
+/// SalesPayment. Bank reconciliation matches it to the real credit and the
+/// difference posts as the real MDR/commission.
+model ChannelSettlement {
+  id               String           @id @default(cuid())
+  salesPaymentId   String           @unique
+  salesPayment     SalesPayment     @relation(fields: [salesPaymentId], references: [id], onDelete: Cascade)
+  channelId        String
+  channel          PaymentChannel   @relation(fields: [channelId], references: [id])
+  locationId       String
+  location         Location         @relation(fields: [locationId], references: [id])
+  businessDate     DateTime         @db.Date
+  expectedOn       DateTime         @db.Date
+  grossCents       BigInt
+  expectedFeeCents BigInt
+  expectedWhtCents BigInt
+  expectedNetCents BigInt
+  actualNetCents   BigInt?
+  actualFeeCents   BigInt?
+  status           SettlementStatus @default(EXPECTED)
+  bankMatchId      String?
+  bankMatch        BankMatch?       @relation(fields: [bankMatchId], references: [id])
+  journalEntryId   String?          @unique
+
+  @@index([status, expectedOn])
+}
+
+// ----------------------------- Loyverse ------------------------------------
+
+enum LoyverseExportKind {
+  RECEIPTS
+  RECEIPTS_BY_ITEM
+  SALES_SUMMARY
+  SALES_BY_ITEM
+  SALES_BY_PAYMENT_TYPE
+  API
+}
+
+model LoyverseImport {
+  id             String             @id @default(cuid())
+  locationId     String
+  location       Location           @relation(fields: [locationId], references: [id])
+  kind           LoyverseExportKind
+  fileName       String?
+  attachmentId   String?
+  dateFrom       DateTime?          @db.Date
+  dateTo         DateTime?          @db.Date
+  rowCount       Int                @default(0)
+  newCount       Int                @default(0)
+  duplicateCount Int                @default(0)
+  errors         Json?
+  importedById   String
+  createdAt      DateTime           @default(now())
+  receipts       LoyverseReceipt[]
+}
+
+/// Raw receipt, deduplicated by (location, receipt number). Aggregated into
+/// the SalesReport for its business date/shift on confirm.
+model LoyverseReceipt {
+  id            String                @id @default(cuid())
+  locationId    String
+  location      Location              @relation(fields: [locationId], references: [id])
+  receiptNumber String
+  receiptAt     DateTime
+  businessDate  DateTime              @db.Date
+  isRefund      Boolean               @default(false)
+  grossCents    BigInt
+  discountCents BigInt
+  netCents      BigInt
+  paymentType   String // as named in Loyverse
+  cashierName   String?
+  posDevice     String?
+  importId      String
+  import        LoyverseImport        @relation(fields: [importId], references: [id])
+  reportId      String?
+  report        SalesReport?          @relation(fields: [reportId], references: [id])
+  lines         LoyverseReceiptLine[]
+
+  @@unique([locationId, receiptNumber])
+  @@index([locationId, businessDate])
+}
+
+model LoyverseReceiptLine {
+  id            String          @id @default(cuid())
+  receiptId     String
+  receipt       LoyverseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  itemName      String
+  variantName   String?
+  qty           Decimal         @db.Decimal(10, 2)
+  grossCents    BigInt
+  discountCents BigInt
+  productId     String?
+  product       Product?        @relation(fields: [productId], references: [id])
+}
+
+enum LoyverseMapKind {
+  ITEM
+  PAYMENT_TYPE
+  DISCOUNT
+  EMPLOYEE
+}
+
+/// External Loyverse name → internal entity. locationId null = all stores.
+model LoyverseMapping {
+  id             String          @id @default(cuid())
+  kind           LoyverseMapKind
+  locationId     String?
+  location       Location?       @relation(fields: [locationId], references: [id])
+  externalName   String
+  productId      String?
+  product        Product?        @relation(fields: [productId], references: [id])
+  channelId      String?
+  channel        PaymentChannel? @relation(fields: [channelId], references: [id])
+  discountTypeId String?
+  userId         String?
+  /// When a Loyverse item has its own pax multiplier (e.g. "Barkada for 4").
+  paxOverride    Decimal?        @db.Decimal(6, 2)
+
+  @@unique([kind, locationId, externalName])
+}
+
+// =============================================================================
+// 6. EXPENSES, SUPPLIERS, ACCOUNTS PAYABLE
+// =============================================================================
+
+model Supplier {
+  id               String             @id @default(cuid())
+  name             String
+  tin              String?
+  contactName      String?
+  phone            String?
+  email            String?
+  termsDays        Int                @default(0)
+  defaultAccountId String?
+  defaultAccount   Account?           @relation(fields: [defaultAccountId], references: [id])
+  isActive         Boolean            @default(true)
+  expenses         Expense[]
+  items            Item[]
+  recurring        RecurringExpense[]
+}
+
+enum PaymentTerms {
+  PAID_NOW // cash/petty/GCash/bank/owner-personal at time of purchase
+  ON_ACCOUNT // supplier bill → accounts payable
+}
+
+/// An expense or supplier bill. Lines can hit expense accounts or, when
+/// itemId is set, inventory (creates a PURCHASE stock movement).
+model Expense {
+  id               String            @id @default(cuid())
+  number           Int               @unique @default(autoincrement())
+  locationId       String
+  location         Location          @relation(fields: [locationId], references: [id])
+  date             DateTime          @db.Date
+  supplierId       String?
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
+  terms            PaymentTerms      @default(PAID_NOW)
+  dueDate          DateTime?         @db.Date
+  receiptNo        String? // OR / SI / invoice no.
+  isVatInvoice     Boolean           @default(false)
+  vatCents         BigInt            @default(0) // tracked only; non-VAT business expenses it
+  totalCents       BigInt
+  paidCents        BigInt            @default(0)
+  status           DocStatus         @default(DRAFT)
+  /// Highest permission needed, resolved from ApprovalRule at submit.
+  requiredApproval String?
+  notes            String?
+  /// Paid from the cash drawer during a shift → reduces expected cash.
+  salesReportId    String?
+  salesReport      SalesReport?      @relation(fields: [salesReportId], references: [id])
+  recurringId      String?
+  recurring        RecurringExpense? @relation(fields: [recurringId], references: [id])
+  submittedById    String
+  submittedAt      DateTime?
+  approvedById     String?
+  approvedAt       DateTime?
+  journalEntryId   String?           @unique
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  lines    ExpenseLine[]
+  payments ExpensePayment[]
+
+  @@index([locationId, date])
+  @@index([status])
+}
+
+model ExpenseLine {
+  id          String   @id @default(cuid())
+  expenseId   String
+  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id])
+  description String?
+  /// Inventory purchase: qty in purchase unit, converted on receipt.
+  itemId      String?
+  item        Item?    @relation(fields: [itemId], references: [id])
+  qty         Decimal? @db.Decimal(18, 4)
+  unit        String?
+  amountCents BigInt
+}
+
+model ExpensePayment {
+  id             String       @id @default(cuid())
+  expenseId      String
+  expense        Expense      @relation(fields: [expenseId], references: [id])
+  date           DateTime     @db.Date
+  moneyAccountId String
+  moneyAccount   MoneyAccount @relation(fields: [moneyAccountId], references: [id])
+  amountCents    BigInt
+  reference      String?
+  journalEntryId String?      @unique
+  createdById    String
+  createdAt      DateTime     @default(now())
+}
+
+enum Frequency {
+  WEEKLY
+  SEMI_MONTHLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+/// Template; Vercel Cron creates DRAFT Expenses from it each period.
+model RecurringExpense {
+  id             String        @id @default(cuid())
+  name           String
+  locationId     String
+  location       Location      @relation(fields: [locationId], references: [id])
+  supplierId     String?
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id])
+  accountId      String
+  account        Account       @relation(fields: [accountId], references: [id])
+  amountCents    BigInt
+  terms          PaymentTerms  @default(ON_ACCOUNT)
+  moneyAccountId String?
+  moneyAccount   MoneyAccount? @relation(fields: [moneyAccountId], references: [id])
+  frequency      Frequency
+  dayOfMonth     Int?
+  nextRunOn      DateTime      @db.Date
+  endOn          DateTime?     @db.Date
+  isActive       Boolean       @default(true)
+  generated      Expense[]
+}
+
+// =============================================================================
+// 7. INVENTORY, RECIPES, PRODUCTION, TRANSFERS
+// =============================================================================
+
+enum CostClass {
+  COGS
+  OPERATING_SUPPLY
+  FIXED_ASSET
+}
+
+enum CountFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model ItemCategory {
+  id               String    @id @default(cuid())
+  name             String    @unique // Raw protein, Sauce, Dry goods, ...
+  defaultCostClass CostClass @default(COGS)
+  sortOrder        Int       @default(0)
+  items            Item[]
+}
+
+model Item {
+  id                   String         @id @default(cuid())
+  sku                  String?        @unique
+  name                 String
+  categoryId           String
+  category             ItemCategory   @relation(fields: [categoryId], references: [id])
+  costClass            CostClass      @default(COGS)
+  baseUnit             String // kg, L, pc, pack
+  purchaseUnit         String? // box
+  purchaseToBase       Decimal        @default(1) @db.Decimal(18, 6) // 1 box = 10 kg
+  /// Produced at the commissary (sauces, marinated wings).
+  isProduced           Boolean        @default(false)
+  countFrequency       CountFrequency @default(MONTHLY)
+  trackLots            Boolean        @default(false)
+  inventoryAccountId   String
+  inventoryAccount     Account        @relation("ItemInventoryAccount", fields: [inventoryAccountId], references: [id])
+  /// COGS / supplies account hit when used (from counts, waste, etc.).
+  consumptionAccountId String
+  consumptionAccount   Account        @relation("ItemConsumptionAccount", fields: [consumptionAccountId], references: [id])
+  preferredSupplierId  String?
+  preferredSupplier    Supplier?      @relation(fields: [preferredSupplierId], references: [id])
+  lastUnitCost         Decimal        @default(0) @db.Decimal(18, 6)
+  isActive             Boolean        @default(true)
+
+  locationSettings ItemLocationSetting[]
+  balances         StockBalance[]
+  movements        StockMovement[]
+  countLines       StockCountLine[]
+  adjustmentLines  StockAdjustmentLine[]
+  recipeLines      RecipeLine[]
+  recipesOutput    Recipe[]               @relation("RecipeOutput")
+  batchesOutput    ProductionBatch[]
+  batchInputs      ProductionBatchInput[]
+  transferLines    TransferLine[]
+  presetLines      TransferPresetLine[]
+  expenseLines     ExpenseLine[]
+  lots             StockLot[]
+}
+
+model ItemLocationSetting {
+  itemId              String
+  locationId          String
+  item                Item            @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  location            Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  isStocked           Boolean         @default(true)
+  parLevel            Decimal?        @db.Decimal(18, 4)
+  reorderPoint        Decimal?        @db.Decimal(18, 4)
+  storageArea         String? // "Chiller 1", "Dry storage"
+  countSortOrder      Int             @default(0)
+  countFrequency      CountFrequency? // overrides Item.countFrequency
+  varianceToleranceBp Int? // overrides global (default 500 = ±5%)
+
+  @@id([itemId, locationId])
+}
+
+/// Running perpetual state (weighted-average). Updated in the same
+/// transaction as each StockMovement; rebuildable from movements.
+model StockBalance {
+  itemId      String
+  locationId  String
+  item        Item     @relation(fields: [itemId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id])
+  qty         Decimal  @default(0) @db.Decimal(18, 4)
+  avgUnitCost Decimal  @default(0) @db.Decimal(18, 6)
+  valueCents  BigInt   @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@id([itemId, locationId])
+}
+
+enum MovementType {
+  OPENING
+  PURCHASE
+  TRANSFER_OUT
+  TRANSFER_IN
+  TRANSFER_LOSS
+  PRODUCTION_CONSUME
+  PRODUCTION_OUTPUT
+  WASTE
+  STAFF_MEAL
+  ADJUSTMENT
+  /// Usage derived from a physical count:
+  /// beginning + in − out − waste − ending. Moves cost to COGS.
+  COUNT_USAGE
+}
+
+/// Inventory sub-ledger. Signed qty/value (+ in, − out). Every movement
+/// with a value posts (or is part of) a journal entry.
+model StockMovement {
+  id           String       @id @default(cuid())
+  itemId       String
+  item         Item         @relation(fields: [itemId], references: [id])
+  locationId   String
+  location     Location     @relation(fields: [locationId], references: [id])
+  businessDate DateTime     @db.Date
+  type         MovementType
+  qty          Decimal      @db.Decimal(18, 4)
+  unitCost     Decimal      @db.Decimal(18, 6)
+  valueCents   BigInt
+  sourceType   String // "Transfer", "StockCount", "Expense", ...
+  sourceId     String
+  lotId        String?
+  lot          StockLot?    @relation(fields: [lotId], references: [id])
+  reason       String?
+  createdById  String
+  createdAt    DateTime     @default(now())
+
+  @@index([itemId, locationId, businessDate])
+  @@index([sourceType, sourceId])
+}
+
+model StockLot {
+  id           String          @id @default(cuid())
+  itemId       String
+  item         Item            @relation(fields: [itemId], references: [id])
+  locationId   String
+  lotCode      String
+  producedOn   DateTime?       @db.Date
+  expiresOn    DateTime?       @db.Date
+  qtyRemaining Decimal         @db.Decimal(18, 4)
+  movements    StockMovement[]
+}
+
+enum CountType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  FULL
+  OPENING
+}
+
+model StockCount {
+  id             String           @id @default(cuid())
+  locationId     String
+  location       Location         @relation(fields: [locationId], references: [id])
+  countDate      DateTime         @db.Date
+  type           CountType
+  status         DocStatus        @default(DRAFT)
+  countedById    String
+  submittedAt    DateTime?
+  postedAt       DateTime?
+  journalEntryId String?          @unique
+  notes          String?
+  lines          StockCountLine[]
+
+  @@unique([locationId, countDate, type])
+}
+
+model StockCountLine {
+  id         String     @id @default(cuid())
+  countId    String
+  count      StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       Item       @relation(fields: [itemId], references: [id])
+  /// Book qty at count time (beginning + in − out − waste).
+  systemQty  Decimal    @db.Decimal(18, 4)
+  countedQty Decimal    @db.Decimal(18, 4)
+  usageQty   Decimal    @db.Decimal(18, 4)
+  unitCost   Decimal    @db.Decimal(18, 6)
+  usageCents BigInt
+  notes      String?
+
+  @@unique([countId, itemId])
+}
+
+enum AdjustmentType {
+  WASTE
+  STAFF_MEAL
+  ADJUSTMENT
+  OPENING
+}
+
+model StockAdjustment {
+  id             String                @id @default(cuid())
+  locationId     String
+  location       Location              @relation(fields: [locationId], references: [id])
+  date           DateTime              @db.Date
+  type           AdjustmentType
+  reason         String
+  status         DocStatus             @default(DRAFT)
+  createdById    String
+  approvedById   String?
+  journalEntryId String?               @unique
+  createdAt      DateTime              @default(now())
+  lines          StockAdjustmentLine[]
+}
+
+model StockAdjustmentLine {
+  id           String          @id @default(cuid())
+  adjustmentId String
+  adjustment   StockAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  itemId       String
+  item         Item            @relation(fields: [itemId], references: [id])
+  qty          Decimal         @db.Decimal(18, 4) // signed
+  unitCost     Decimal?        @db.Decimal(18, 6) // required for OPENING
+  reason       String?
+}
+
+enum RecipeKind {
+  /// Commissary BOM: ingredients → output item (sauce, marinated wings)
+  PRODUCTION
+  /// À la carte / add-on product → items used per unit sold
+  MENU_ITEM
+  /// Unlimited package → standard consumption PER PAX (e.g. 0.45 kg wings)
+  PACKAGE_PER_PAX
+}
+
+model Recipe {
+  id                   String            @id @default(cuid())
+  name                 String
+  kind                 RecipeKind
+  productId            String?
+  product              Product?          @relation(fields: [productId], references: [id])
+  outputItemId         String?
+  outputItem           Item?             @relation("RecipeOutput", fields: [outputItemId], references: [id])
+  /// Yield of one batch of this recipe, in the output item's base unit.
+  outputQty            Decimal?          @db.Decimal(18, 4)
+  /// Optional labor/overhead absorbed into batch cost, per output base unit.
+  overheadPerUnitCents BigInt            @default(0)
+  effectiveFrom        DateTime          @db.Date
+  isActive             Boolean           @default(true)
+  lines                RecipeLine[]
+  batches              ProductionBatch[]
+}
+
+model RecipeLine {
+  id       String  @id @default(cuid())
+  recipeId String
+  recipe   Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  itemId   String
+  item     Item    @relation(fields: [itemId], references: [id])
+  qty      Decimal @db.Decimal(18, 4) // per batch / per unit / per pax
+
+  @@unique([recipeId, itemId])
+}
+
+model ProductionBatch {
+  id              String                 @id @default(cuid())
+  number          Int                    @unique @default(autoincrement())
+  locationId      String
+  location        Location               @relation(fields: [locationId], references: [id])
+  recipeId        String
+  recipe          Recipe                 @relation(fields: [recipeId], references: [id])
+  outputItemId    String
+  outputItem      Item                   @relation(fields: [outputItemId], references: [id])
+  batchDate       DateTime               @db.Date
+  outputQty       Decimal                @db.Decimal(18, 4)
+  ingredientCents BigInt
+  overheadCents   BigInt                 @default(0)
+  totalCostCents  BigInt
+  unitCost        Decimal                @db.Decimal(18, 6)
+  lotCode         String?
+  expiresOn       DateTime?              @db.Date
+  status          DocStatus              @default(DRAFT)
+  producedById    String
+  journalEntryId  String?                @unique
+  createdAt       DateTime               @default(now())
+  inputs          ProductionBatchInput[]
+}
+
+model ProductionBatchInput {
+  id          String          @id @default(cuid())
+  batchId     String
+  batch       ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  itemId      String
+  item        Item            @relation(fields: [itemId], references: [id])
+  standardQty Decimal         @db.Decimal(18, 4)
+  actualQty   Decimal         @db.Decimal(18, 4)
+  unitCost    Decimal         @db.Decimal(18, 6)
+  valueCents  BigInt
+}
+
+enum TransferStatus {
+  DRAFT
+  DISPATCHED
+  RECEIVED
+  RECEIVED_WITH_DISCREPANCY
+  CANCELLED
+}
+
+/// Commissary → branch or branch → branch. Priced at cost (WAC / batch
+/// cost); optional markup is OFF (0) by default.
+/// Dispatch: sender Cr Inventory, Dr Interco Receivable (counterparty = receiver)
+/// Receive:  receiver Dr Inventory, Cr Interco Payable (counterparty = sender)
+/// Short-receipts post TRANSFER_LOSS per the discrepancy setting.
+model Transfer {
+  id                     String         @id @default(cuid())
+  number                 Int            @unique @default(autoincrement())
+  fromLocationId         String
+  fromLocation           Location       @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocationId           String
+  toLocation             Location       @relation("TransferTo", fields: [toLocationId], references: [id])
+  status                 TransferStatus @default(DRAFT)
+  markupBp               Int            @default(0)
+  costCents              BigInt         @default(0)
+  valueCents             BigInt         @default(0) // cost + markup
+  notes                  String?
+  createdById            String
+  dispatchedAt           DateTime?
+  dispatchedById         String?
+  receivedAt             DateTime?
+  receivedById           String?
+  dispatchJournalEntryId String?        @unique
+  receiveJournalEntryId  String?        @unique
+  createdAt              DateTime       @default(now())
+  lines                  TransferLine[]
+
+  @@index([toLocationId, status])
+  @@index([fromLocationId, dispatchedAt])
+}
+
+model TransferLine {
+  id                String   @id @default(cuid())
+  transferId        String
+  transfer          Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  itemId            String
+  item              Item     @relation(fields: [itemId], references: [id])
+  qtySent           Decimal  @db.Decimal(18, 4)
+  qtyReceived       Decimal? @db.Decimal(18, 4)
+  unitCost          Decimal  @db.Decimal(18, 6)
+  unitPrice         Decimal  @db.Decimal(18, 6) // = unitCost when markup 0
+  valueCents        BigInt
+  discrepancyReason String?
+}
+
+/// One-tap pick lists for the mobile dispatch screen ("Lanang daily sauces").
+model TransferPreset {
+  id             String               @id @default(cuid())
+  name           String
+  fromLocationId String
+  fromLocation   Location             @relation("PresetFrom", fields: [fromLocationId], references: [id])
+  toLocationId   String?
+  toLocation     Location?            @relation("PresetTo", fields: [toLocationId], references: [id])
+  sortOrder      Int                  @default(0)
+  lines          TransferPresetLine[]
+}
+
+model TransferPresetLine {
+  id         String         @id @default(cuid())
+  presetId   String
+  preset     TransferPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       Item           @relation(fields: [itemId], references: [id])
+  defaultQty Decimal        @db.Decimal(18, 4)
+}
+
+// =============================================================================
+// 8. BANKING & RECONCILIATION
+// =============================================================================
+
+/// Column-mapping preset: BPI, GCash, Maya Business, Grab Merchant + custom.
+model StatementFormat {
+  id            String          @id @default(cuid())
+  name          String          @unique
+  institution   String?
+  isSystem      Boolean         @default(false)
+  /// { delimiter, headerRow, dateFormat, columns: { date, description,
+  ///   reference, debit, credit, amount, balance }, signConvention, skipRows }
+  config        Json
+  moneyAccounts MoneyAccount[]
+  statements    BankStatement[]
+}
+
+model BankStatement {
+  id                  String              @id @default(cuid())
+  moneyAccountId      String
+  moneyAccount        MoneyAccount        @relation(fields: [moneyAccountId], references: [id])
+  formatId            String
+  format              StatementFormat     @relation(fields: [formatId], references: [id])
+  periodStart         DateTime            @db.Date
+  periodEnd           DateTime            @db.Date
+  openingBalanceCents BigInt?
+  closingBalanceCents BigInt?
+  attachmentId        String?
+  importedById        String
+  createdAt           DateTime            @default(now())
+  lines               BankStatementLine[]
+  reconciliations     Reconciliation[]
+}
+
+enum StatementLineStatus {
+  UNMATCHED
+  MATCHED
+  CREATED // a transaction was created from this line (bank charge, MDR…)
+  IGNORED
+  INVESTIGATE
+}
+
+model BankStatementLine {
+  id           String              @id @default(cuid())
+  statementId  String
+  statement    BankStatement       @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  lineNo       Int
+  txnDate      DateTime            @db.Date
+  description  String
+  reference    String?
+  amountCents  BigInt // signed: + inflow, − outflow
+  balanceCents BigInt?
+  /// sha256(account, date, amount, ref, description) — re-import safe.
+  dedupeHash   String
+  status       StatementLineStatus @default(UNMATCHED)
+  note         String?
+  matchLines   BankMatchLine[]
+
+  @@unique([statementId, lineNo])
+  @@index([dedupeHash])
+}
+
+enum MatchMethod {
+  AUTO
+  MANUAL
+}
+
+/// N statement lines ↔ M journal lines (supports split and merge).
+/// Sum of statement amounts must equal sum of matched journal amounts.
+model BankMatch {
+  id          String              @id @default(cuid())
+  method      MatchMethod
+  score       Int? // auto-match confidence 0–100
+  createdById String?
+  createdAt   DateTime            @default(now())
+  lines       BankMatchLine[]
+  items       BankMatchItem[]
+  settlements ChannelSettlement[]
+}
+
+model BankMatchLine {
+  matchId         String
+  statementLineId String
+  match           BankMatch         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  statementLine   BankStatementLine @relation(fields: [statementLineId], references: [id])
+
+  @@id([matchId, statementLineId])
+}
+
+model BankMatchItem {
+  matchId       String
+  journalLineId String
+  match         BankMatch   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  journalLine   JournalLine @relation(fields: [journalLineId], references: [id])
+
+  @@id([matchId, journalLineId])
+}
+
+model Reconciliation {
+  id                          String         @id @default(cuid())
+  moneyAccountId              String
+  moneyAccount                MoneyAccount   @relation(fields: [moneyAccountId], references: [id])
+  statementId                 String?
+  statement                   BankStatement? @relation(fields: [statementId], references: [id])
+  asOfDate                    DateTime       @db.Date
+  statementBalanceCents       BigInt
+  bookBalanceCents            BigInt
+  outstandingDepositsCents    BigInt
+  outstandingWithdrawalsCents BigInt
+  adjustedBalanceCents        BigInt
+  differenceCents             BigInt
+  status                      DocStatus      @default(DRAFT) // POSTED = completed & locked
+  completedById               String?
+  completedAt                 DateTime?
+  clearedLines                JournalLine[]
+}
+
+// =============================================================================
+// 9. PAYROLL
+// =============================================================================
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  RESIGNED
+  TERMINATED
+}
+
+enum RateType {
+  DAILY
+  MONTHLY
+}
+
+model Employee {
+  id                  String           @id @default(cuid())
+  code                String           @unique
+  firstName           String
+  lastName            String
+  middleName          String?
+  position            String
+  status              EmploymentStatus @default(ACTIVE)
+  startDate           DateTime         @db.Date
+  endDate             DateTime?        @db.Date
+  sssNo               String?
+  philhealthNo        String?
+  pagibigNo           String?
+  tin                 String?
+  isMinimumWageEarner Boolean          @default(true)
+  payoutMethod        String? // cash / GCash / bank
+  payoutRef           String?
+  userId              String?          @unique
+  user                User?            @relation(fields: [userId], references: [id])
+  createdAt           DateTime         @default(now())
+
+  assignments   EmployeeAssignment[]
+  compensations EmployeeCompensation[]
+  attendance    AttendanceEntry[]
+  payrollLines  PayrollLine[]
+  loans         EmployeeLoan[]
+}
+
+/// Home location over time. Labor is costed to where attendance says they
+/// worked; this is the default when an attendance row has no location.
+model EmployeeAssignment {
+  id            String    @id @default(cuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+}
+
+model EmployeeCompensation {
+  id            String   @id @default(cuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  effectiveFrom DateTime @db.Date
+  rateType      RateType
+  rateCents     BigInt
+  /// Working days per year factor for monthly ↔ daily conversion (e.g. 313).
+  daysPerYear   Int      @default(313)
+  /// { "rice": 100000, "transpo": 50000 } per cut-off, de minimis flags, etc.
+  allowances    Json     @default("{}")
+}
+
+enum HolidayType {
+  REGULAR
+  SPECIAL_NON_WORKING
+  SPECIAL_WORKING
+}
+
+/// PH holidays by year; locationId set for local holidays (e.g. Davao City).
+model Holiday {
+  id         String      @id @default(cuid())
+  date       DateTime    @db.Date
+  name       String
+  type       HolidayType
+  locationId String?
+  location   Location?   @relation(fields: [locationId], references: [id])
+
+  @@unique([date, locationId])
+}
+
+/// One DTR batch = location × cut-off, with the signed paper DTR photo(s).
+model AttendanceSheet {
+  id           String            @id @default(cuid())
+  locationId   String
+  location     Location          @relation(fields: [locationId], references: [id])
+  periodStart  DateTime          @db.Date
+  periodEnd    DateTime          @db.Date
+  status       DocStatus         @default(DRAFT)
+  encodedById  String
+  approvedById String?
+  entries      AttendanceEntry[]
+
+  @@unique([locationId, periodStart])
+}
+
+enum DayStatus {
+  PRESENT
+  ABSENT
+  LEAVE_PAID
+  LEAVE_UNPAID
+  REST_DAY
+  HOLIDAY_OFF
+}
+
+model AttendanceEntry {
+  id               String          @id @default(cuid())
+  sheetId          String
+  sheet            AttendanceSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         Employee        @relation(fields: [employeeId], references: [id])
+  /// Where they actually worked that day (for labor cost split).
+  locationId       String
+  location         Location        @relation(fields: [locationId], references: [id])
+  date             DateTime        @db.Date
+  status           DayStatus
+  timeIn           String? // "08:02" local; optional
+  timeOut          String?
+  lateMinutes      Int             @default(0)
+  undertimeMinutes Int             @default(0)
+  otMinutes        Int             @default(0)
+  nightDiffMinutes Int             @default(0)
+  isRestDayWork    Boolean         @default(false)
+
+  @@unique([employeeId, date])
+}
+
+enum ContributionKind {
+  SSS
+  PHILHEALTH
+  PAGIBIG
+  WITHHOLDING_TAX
+}
+
+/// Government tables as data (editable when rates change).
+model ContributionTable {
+  id            String                @id @default(cuid())
+  kind          ContributionKind
+  name          String // "SSS 2025 schedule", "TRAIN 2023+ semi-monthly"
+  effectiveFrom DateTime              @db.Date
+  /// For WITHHOLDING_TAX: MONTHLY / SEMI_MONTHLY; else MONTHLY.
+  basis         String                @default("MONTHLY")
+  brackets      ContributionBracket[]
+}
+
+/// Generic bracket: for range [min, max], amount =
+/// fixed + rate × (base − excessOver), separately for EE / ER / EC.
+model ContributionBracket {
+  id              String            @id @default(cuid())
+  tableId         String
+  table           ContributionTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  minCents        BigInt
+  maxCents        BigInt?
+  excessOverCents BigInt            @default(0)
+  eeFixedCents    BigInt            @default(0)
+  eeRateBp        Int               @default(0)
+  erFixedCents    BigInt            @default(0)
+  erRateBp        Int               @default(0)
+  ecFixedCents    BigInt            @default(0)
+  /// SSS monthly salary credit, PhilHealth floor/ceiling notes, etc.
+  meta            Json?
+}
+
+enum PayrollRunType {
+  REGULAR
+  THIRTEENTH_MONTH
+  FINAL_PAY
+  SPECIAL
+}
+
+model PayrollRun {
+  id             String         @id @default(cuid())
+  type           PayrollRunType @default(REGULAR)
+  periodStart    DateTime       @db.Date
+  periodEnd      DateTime       @db.Date
+  payDate        DateTime       @db.Date
+  status         DocStatus      @default(DRAFT)
+  preparedById   String
+  approvedById   String?
+  journalEntryId String?        @unique
+  createdAt      DateTime       @default(now())
+  lines          PayrollLine[]
+
+  @@unique([type, periodStart, periodEnd])
+}
+
+/// One payslip.
+model PayrollLine {
+  id                String            @id @default(cuid())
+  runId             String
+  run               PayrollRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee          @relation(fields: [employeeId], references: [id])
+  daysWorked        Decimal           @db.Decimal(6, 2)
+  grossCents        BigInt
+  deductionsCents   BigInt
+  netCents          BigInt
+  employerCostCents BigInt
+  /// Inputs used (rates, tables) for audit / reprint.
+  snapshot          Json
+  items             PayrollLineItem[]
+
+  @@unique([runId, employeeId])
+}
+
+enum PayItemKind {
+  EARNING
+  DEDUCTION
+  EMPLOYER_SHARE
+}
+
+/// BASIC, OT, HOLIDAY, NIGHT_DIFF, ALLOWANCE, SERVICE_CHARGE, SSS_EE,
+/// SSS_ER, SSS_EC, PHIC_EE, PHIC_ER, HDMF_EE, HDMF_ER, WTAX, LOAN, CA, ...
+/// locationId = where this cost belongs (split by attendance days).
+model PayrollLineItem {
+  id          String        @id @default(cuid())
+  lineId      String
+  line        PayrollLine   @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  kind        PayItemKind
+  code        String
+  description String?
+  amountCents BigInt
+  locationId  String
+  location    Location      @relation(fields: [locationId], references: [id])
+  loanId      String?
+  loan        EmployeeLoan? @relation(fields: [loanId], references: [id])
+}
+
+enum LoanType {
+  CASH_ADVANCE
+  COMPANY_LOAN
+  SSS_LOAN
+  PAGIBIG_LOAN
+}
+
+model EmployeeLoan {
+  id              String            @id @default(cuid())
+  employeeId      String
+  employee        Employee          @relation(fields: [employeeId], references: [id])
+  type            LoanType
+  principalCents  BigInt
+  perPayrollCents BigInt
+  balanceCents    BigInt
+  startDate       DateTime          @db.Date
+  isActive        Boolean           @default(true)
+  deductions      PayrollLineItem[]
+}
+
+// =============================================================================
+// 10. REPORTING SUPPORT, ALERTS, JOBS, IMPORTS
+// =============================================================================
+
+/// Pre-aggregated per location per day for a < 2 s dashboard. Rebuilt for a
+/// (location, date) whenever a posting touches it; fully rebuildable.
+model DailySummary {
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id])
+  date            DateTime @db.Date
+  grossSalesCents BigInt   @default(0)
+  discountsCents  BigInt   @default(0)
+  netSalesCents   BigInt   @default(0)
+  pax             Decimal  @default(0) @db.Decimal(10, 2)
+  cogsCents       BigInt   @default(0)
+  laborCents      BigInt   @default(0)
+  opexCents       BigInt   @default(0)
+  /// { channelId: cents }
+  byChannel       Json     @default("{}")
+  wingsUsedQty    Decimal? @db.Decimal(18, 4)
+  updatedAt       DateTime @updatedAt
+
+  @@id([locationId, date])
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model Alert {
+  id         String        @id @default(cuid())
+  type       String // CASH_SHORT, VARIANCE, LOW_STOCK, BILL_DUE, ...
+  severity   AlertSeverity
+  locationId String?
+  location   Location?     @relation(fields: [locationId], references: [id])
+  entityType String?
+  entityId   String?
+  message    String
+  status     AlertStatus   @default(OPEN)
+  dedupeKey  String        @unique
+  createdAt  DateTime      @default(now())
+  resolvedAt DateTime?
+}
+
+model ReportSchedule {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  report     String // "daily-sales", "monthly-pnl"
+  cron       String
+  params     Json      @default("{}")
+  isActive   Boolean   @default(true)
+  lastSentAt DateTime?
+}
+
+enum ImportStatus {
+  UPLOADED
+  MAPPED
+  VALIDATED
+  COMMITTED
+  FAILED
+}
+
+/// Migration wizard (items, opening stock, COA, opening balances, employees,
+/// historical sales/expenses from Google Sheets).
+model ImportJob {
+  id           String       @id @default(cuid())
+  kind         String
+  attachmentId String
+  mapping      Json?
+  status       ImportStatus @default(UPLOADED)
+  rowCount     Int          @default(0)
+  errorCount   Int          @default(0)
+  errors       Json?
+  createdById  String
+  createdAt    DateTime     @default(now())
+  committedAt  DateTime?
+}
+
+model JobRun {
+  id         String    @id @default(cuid())
+  job        String // "recurring-expenses", "depreciation", "loyverse-sync"
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  ok         Boolean?
+  details    Json?
+}
