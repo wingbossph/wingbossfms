@@ -26,8 +26,8 @@ export const NAV: NavSection[] = [
       { href: "/sales", label: "Sales", icon: "receipt", anyOf: ["sales:view", "sales:create"] },
       { href: "/cash", label: "Cash & deposits", icon: "wallet", anyOf: ["cash:count", "cash:deposit", "money:view", "money:transfer"] },
       { href: "/expenses", label: "Expenses", icon: "banknote", anyOf: ["expenses:view", "expenses:create", "expenses:approve", "payables:manage"] },
-      { href: "/inventory", label: "Inventory", icon: "boxes", anyOf: ["inventory:view", "inventory:count"], phase: 5 },
-      { href: "/commissary", label: "Commissary", icon: "truck", anyOf: ["production:create", "transfers:create", "transfers:receive"], phase: 5 },
+      { href: "/inventory", label: "Inventory", icon: "boxes", anyOf: ["inventory:view", "inventory:count"] },
+      { href: "/commissary", label: "Commissary", icon: "truck", anyOf: ["production:create", "transfers:create", "transfers:receive", "reports:inventory:view"] },
     ],
   },
   {

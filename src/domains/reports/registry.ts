@@ -6,6 +6,7 @@ import type { ReportDoc } from "./doc";
 import { buildBalanceSheet, buildCashFlow, buildEquityStatement, buildPnl, buildTrialBalance, combine, loadBalances, loadChart, profitOf } from "./financials";
 import { asOfOf, dayBefore, fmtDate, fmtRange, monthsIn, rangeOf, type ReportParams } from "./params";
 import { buildGeneralLedger, buildJournal } from "./ledger-reports";
+import { commissaryStatement, stockOnHand, transfersReport, usageReport, varianceDoc, wasteReport } from "./inventory-reports";
 
 export type ReportDef = {
   title: string;
@@ -160,6 +161,74 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
 };
+
+Object.assign(REPORTS, {
+  "stock-on-hand": {
+    title: "Stock on hand & valuation",
+    group: "Inventory",
+    description: "Quantity and value of every item per location (weighted-average cost).",
+    permission: "reports:inventory:view",
+    filters: ["asOf", "location"],
+    async build(user, p) {
+      return stockOnHand(await reportScope(user, "reports:inventory:view", p), asOfOf(p));
+    },
+  },
+  "inventory-usage": {
+    title: "Inventory usage",
+    group: "Inventory",
+    description: "Beginning, received, sent, waste, counted usage and ending per item.",
+    permission: "reports:inventory:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return usageReport(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+  variance: {
+    title: "Usage variance",
+    group: "Inventory",
+    description: "Actual vs theoretical usage per count, flagged beyond tolerance. Finds losses.",
+    permission: "reports:inventory:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return varianceDoc(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+  waste: {
+    title: "Waste & staff meals",
+    group: "Inventory",
+    description: "Every waste, spoilage and staff meal with its reason and cost.",
+    permission: "reports:inventory:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return wasteReport(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+  transfers: {
+    title: "Transfers",
+    group: "Inventory",
+    description: "Deliveries between locations with quantities sent and received.",
+    permission: "reports:inventory:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return transfersReport(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+  "commissary-statement": {
+    title: "Commissary statement",
+    group: "Inventory",
+    description: "What each branch received from the commissary, its value, and what is owed or settled.",
+    permission: "reports:inventory:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return commissaryStatement(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+} satisfies Record<string, ReportDef>);
 
 export async function buildReport(name: string, user: CurrentUser, p: ReportParams): Promise<{ def: ReportDef; doc: ReportDoc }> {
   const def = REPORTS[name];

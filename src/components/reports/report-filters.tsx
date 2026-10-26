@@ -32,7 +32,10 @@ export function ReportFilters({ spec }: { spec: FilterSpec }) {
   const [pending, start] = useTransition();
   const set = (patch: Record<string, string>) => {
     const next = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(patch)) (v ? next.set(k, v) : next.delete(k));
+    for (const [k, v] of Object.entries(patch)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
     start(() => router.replace(`${pathname}?${next.toString()}`));
   };
   const presets: { label: string; from: string; to: string }[] = (() => {

@@ -1562,6 +1562,8 @@ model TransferLine {
   qtyReceived       Decimal? @db.Decimal(18, 4)
   unitCost          Decimal  @db.Decimal(18, 6)
   unitPrice         Decimal  @db.Decimal(18, 6) // = unitCost when markup 0
+  /// Exact cost that left the sender (receipts are prorated from this).
+  costCents         BigInt   @default(0)
   valueCents        BigInt
   discrepancyReason String?
 }

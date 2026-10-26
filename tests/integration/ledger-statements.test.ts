@@ -89,10 +89,13 @@ describe("ledger operations", () => {
     const actor = await ownerActor();
     const bpi = f.money("BPI Bank");
     const ap = await systemAccount("ACCOUNTS_PAYABLE");
+    const obeAccount = await systemAccount("OPENING_BALANCE_EQUITY");
+    const beforeAgg = await db.journalLine.aggregate({ where: { accountId: obeAccount.id }, _sum: { creditCents: true, debitCents: true } });
+    const before = (beforeAgg._sum.creditCents ?? 0n) - (beforeAgg._sum.debitCents ?? 0n);
     await tx((t) => postOpeningBalances(t, { date: ymd(60), lines: [{ accountId: bpi.glAccountId, locationId: f.office.id, amountCents: 50_000_000n }, { accountId: ap.id, locationId: f.office.id, amountCents: 2_000_000n }] }, actor));
     const obe = await systemAccount("OPENING_BALANCE_EQUITY");
     const agg = await db.journalLine.aggregate({ where: { accountId: obe.id }, _sum: { creditCents: true, debitCents: true } });
-    expect((agg._sum.creditCents ?? 0n) - (agg._sum.debitCents ?? 0n)).toBe(48_000_000n);
+    expect((agg._sum.creditCents ?? 0n) - (agg._sum.debitCents ?? 0n) - before).toBe(48_000_000n);
   });
 
   it("owner drawings and capital post to equity", async () => {
