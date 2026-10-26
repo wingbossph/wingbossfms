@@ -1,6 +1,6 @@
-# Wingboss FMS: Architecture Proposal (pre-Phase 1)
+# Wingboss FMS: Architecture
 
-Status: **Phase 1 built** on the defaults in [`QUESTIONS.md`](./QUESTIONS.md).
+Status: **all nine phases built** on the defaults in [`QUESTIONS.md`](./QUESTIONS.md). This was the pre-Phase 1 proposal; notes below mark where the build differs.
 
 - (a) Database schema: [`prisma/schema.prisma`](../prisma/schema.prisma) (Prisma 7, validated)
 - (b) Folder structure: section 4 below
@@ -24,7 +24,7 @@ Status: **Phase 1 built** on the defaults in [`QUESTIONS.md`](./QUESTIONS.md).
 | 10 | **Deferred channels (Maya, Grab) create a `ChannelSettlement`** (expected net = gross − MDR − withholding, due T+n). When bank reconciliation matches the credit, the **actual** fee is posted. | Shows the real fees paid. |
 | 11 | **RBAC = roles assigned *at* a location, plus per-user ALLOW/DENY overrides.** Every server action calls `authorize(user, "expenses:approve", locationId)`. Branch IDs from the client are only requests, never trusted. | Covers "Admin for Matina only, can approve expenses but not see payroll" with no special cases. |
 | 12 | **PIN login only on a registered branch device** (device token cookie). The session is pinned to that device's location, with a 15-min idle timeout. | A PIN alone is weak (10k–1M combinations). Binding it to a device plus rate limiting makes it safe enough. |
-| 13 | **`DailySummary` table** per location per day, refreshed inside posting transactions. | Dashboard < 2 s over 3 years × 10 branches without materialized-view refresh jobs. |
+| 13 | ~~`DailySummary` table~~ **Not built (yet).** The dashboard reads indexed journal lines and sales reports directly: about 0.3 s for the whole dashboard on the 60-day demo. Most views cover a month, so query size grows with branches, not history. If it slows down as data grows, add the per-location daily summary table refreshed in the posting transactions. | Simpler and always exact; the summary table stays the next step for scale. |
 | 14 | **Government tables, holidays and tax rates are data.** Generic bracket rows cover SSS, PhilHealth, Pag-IBIG and TRAIN. | Rates change yearly. Updating them is a data edit, not a deployment. |
 | 15 | Auth.js v5 (credentials provider, JWT sessions, `sessionVersion` revocation, sliding idle timeout). Prisma 7 (`prisma-client` generator, `prisma.config.ts`, `@prisma/adapter-pg`). TanStack Table v8. Supabase Storage for photos. | Current stable choices that run on Vercel serverless. |
 

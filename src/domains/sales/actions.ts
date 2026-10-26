@@ -167,3 +167,14 @@ export async function commitImportAction(raw: unknown): Promise<ActionState & { 
   });
   return { ...(res ?? { ok: false }), reportIds };
 }
+
+export async function syncLoyverseAction(locationId: string): Promise<ActionState> {
+  return handleAction(async () => {
+    const user = await requireActor();
+    assertCan(user, "sales:import", locationId);
+    const { syncLoyverse } = await import("./loyverse/sync");
+    const r = await syncLoyverse(locationId, user.id);
+    revalidatePath("/sales");
+    return { ok: true, message: r.fetched ? `Fetched ${r.fetched} receipt(s): ${r.created} new, ${r.duplicates} already imported.` : "No new receipts in Loyverse." };
+  });
+}

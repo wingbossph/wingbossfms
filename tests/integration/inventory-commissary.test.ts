@@ -99,6 +99,13 @@ describe("commissary → branch (acceptance #2)", () => {
     expect(await glBalance(loss.id, f.commissary.id)).toBe(9250n);
     const updated = await db.transfer.findUniqueOrThrow({ where: { id: transferId } });
     expect(updated.status).toBe("RECEIVED_WITH_DISCREPANCY");
+
+    // The commissary statement shows what Lanang received and owes.
+    const { commissaryStatement } = await import("@/domains/reports/inventory-reports");
+    const doc = await commissaryStatement({ ids: [f.commissary.id, f.lanang.id], locations: [f.commissary, f.lanang], label: "test" }, ymd(30), ymd(0));
+    const row = doc.rows.find((r) => r.cells.branch === f.lanang.name)!;
+    expect(row).toBeTruthy();
+    expect(Object.values(row.cells)).toContain(64750n);
   });
 
   it("Lanang's count turns the sauce it used into its own COGS", async () => {

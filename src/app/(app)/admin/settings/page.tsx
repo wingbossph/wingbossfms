@@ -35,6 +35,13 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="Business settings" description="Rules that apply to every location. Branch-specific options (Loyverse store, shifts, service charge) are under Payments & branch settings." />
       <SettingsForm fields={fields} />
+      <section className="mt-10 max-w-3xl rounded-lg border p-4">
+        <h2 className="text-2xl">Backup</h2>
+        <p className="mb-3 text-sm text-muted-foreground">Supabase keeps daily database backups. You can also download everything yourself: one CSV per table in a ZIP file.</p>
+        <a href="/api/export/everything" className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
+          Export everything
+        </a>
+      </section>
     </>
   );
 }

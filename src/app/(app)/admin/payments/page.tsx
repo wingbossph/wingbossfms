@@ -26,6 +26,7 @@ export default async function PaymentsPage() {
         locationId: l.id,
         name: l.name,
         storeName: await getSetting(db, "loyverse.storeName", l.id),
+        storeId: await getSetting(db, "loyverse.storeId", l.id),
         requirePaymentsMatch: await getSetting(db, "sales.requirePaymentsMatch", l.id),
         serviceChargeToStaff: await getSetting(db, "sales.serviceChargeToStaff", l.id),
         shiftsPerDay: await getSetting(db, "sales.shiftsPerDay", l.id),

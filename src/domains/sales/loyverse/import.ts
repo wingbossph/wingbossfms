@@ -265,7 +265,7 @@ async function saveReceipt(tx: Tx, locationId: string, importId: string, r: Pars
       discountCents: r.discountCents,
       netCents: r.netCents,
       paymentType: r.paymentType,
-      payments: payments ?? undefined,
+      payments: payments ?? r.payments ?? undefined,
       cashierName: r.cashierName,
       posDevice: r.posDevice,
       lines: { create: r.lines },

@@ -19,6 +19,9 @@ export const SETTING_DEFAULTS = {
   "loyverse.defaultDiscountCode": "PROMO",
   /** Loyverse store name as it appears in CSV exports (per location). */
   "loyverse.storeName": "" as string,
+  /** Loyverse store id for API sync (per location); the token is the LOYVERSE_API_TOKEN env var. */
+  "loyverse.storeId": "" as string,
+  "loyverse.lastSyncAt": "" as string,
   "expenses.ownerApprovalThresholdCents": "500000",
   "alerts.personalGcashShareBp": 3000,
   "alerts.cashShortThresholdCents": "20000",

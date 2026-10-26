@@ -320,6 +320,7 @@ export async function deleteLoyverseMappingAction(id: string): Promise<ActionSta
 
 const EDITABLE_SETTINGS = {
   "loyverse.storeName": z.string().trim().max(80),
+  "loyverse.storeId": z.string().trim().max(80),
   "loyverse.defaultDiscountCode": z.string().trim().max(16),
   "sales.requirePaymentsMatch": z.boolean(),
   "sales.serviceChargeToStaff": z.boolean(),

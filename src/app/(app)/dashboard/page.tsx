@@ -39,7 +39,7 @@ function Card({ label, value, href, children }: { label: string; value: string; 
   return (
     <Link href={href} className="block rounded-lg border bg-card p-4 transition hover:border-foreground">
       <span className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
-      <span className="mt-1 block font-display text-3xl leading-none tracking-wide tabular-nums">{value}</span>
+      <span className="mt-1 block font-display text-2xl leading-none tracking-wide tabular-nums sm:text-3xl">{value}</span>
       <span className="mt-1 block">{children}</span>
     </Link>
   );

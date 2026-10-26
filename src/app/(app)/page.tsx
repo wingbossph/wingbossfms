@@ -53,20 +53,32 @@ export default async function HomePage() {
 }
 
 async function SetupChecklist() {
-  const [branchCount, devices, usersWithoutAccess] = await Promise.all([
+  const [branchCount, devices, usersWithoutAccess, zeroPrices, feesTouched, standards, openingGl, openingStock, employees, imported, statements] = await Promise.all([
     db.location.count({ where: { type: "BRANCH", isActive: true } }),
     db.device.count({ where: { revokedAt: null } }),
     db.user.count({ where: { isActive: true, isOwner: false, roleAssignments: { none: {} } } }),
+    db.priceListItem.count({ where: { priceCents: 0n, product: { isActive: true } } }),
+    db.auditLog.count({ where: { entityType: "PaymentChannel", action: "UPDATE" } }),
+    db.recipeLine.count({ where: { recipe: { kind: "PACKAGE_PER_PAX" }, qty: { gt: 0 } } }),
+    db.journalEntry.count({ where: { source: "OPENING_BALANCE", status: "POSTED" } }),
+    db.stockMovement.count({ where: { type: "OPENING" } }),
+    db.employee.count(),
+    db.importJob.count({ where: { status: "COMMITTED" } }),
+    db.bankStatement.count(),
   ]);
 
-  const items: { done: boolean; label: string; href?: string; phase?: number }[] = [
+  const items: { done: boolean; label: string; href: string }[] = [
     { done: branchCount > 0, label: `Locations set up (${branchCount} branches)`, href: "/admin/locations" },
     { done: devices > 0, label: "Register each branch tablet for PIN login", href: "/admin/devices" },
     { done: usersWithoutAccess === 0, label: "Every user has a role at a location", href: "/admin/users" },
-    { done: false, label: "Review roles and permissions", href: "/admin/roles" },
-    { done: false, label: "Enter your real packages and prices (now ₱0.00 placeholders)", phase: 2 },
-    { done: false, label: "Set Maya / Grab fee rates and settlement days", phase: 2 },
-    { done: false, label: "Set the standard kg of wings per pax", phase: 5 },
+    { done: zeroPrices === 0, label: zeroPrices ? `Enter your real packages and prices (${zeroPrices} still ₱0.00)` : "Packages and prices entered", href: "/admin/menu" },
+    { done: feesTouched > 0, label: "Set Maya / Grab fee rates and settlement days", href: "/admin/payments" },
+    { done: standards > 0, label: "Set the standard kg of wings per pax", href: "/inventory/recipes" },
+    { done: imported > 0, label: "Import the old Google Sheets (items, employees, history)", href: "/admin/import" },
+    { done: openingGl > 0, label: "Enter opening balances (cash, banks, payables)", href: "/ledger/opening" },
+    { done: openingStock > 0, label: "Enter opening inventory", href: "/inventory/adjustments" },
+    { done: employees > 0, label: "Add employees and pay rates", href: "/payroll/employees" },
+    { done: statements > 0, label: "Import the first bank statement and reconcile", href: "/banking/import" },
   ];
 
   return (
@@ -81,15 +93,9 @@ async function SetupChecklist() {
             >
               {i.done ? "✓" : ""}
             </span>
-            {i.href ? (
-              <Link href={i.href} className="underline-offset-4 hover:underline">
-                {i.label}
-              </Link>
-            ) : (
-              <span className="text-muted-foreground">
-                {i.label} <span className="text-xs">(Phase {i.phase})</span>
-              </span>
-            )}
+            <Link href={i.href} className="underline-offset-4 hover:underline">
+              {i.label}
+            </Link>
             <span className="sr-only">{i.done ? "done" : "to do"}</span>
           </li>
         ))}

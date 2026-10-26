@@ -59,7 +59,7 @@ type DiscountType = {
   contraAccountName: string;
   isActive: boolean;
 };
-type BranchSettings = { locationId: string; name: string; storeName: string; requirePaymentsMatch: boolean; serviceChargeToStaff: boolean; shiftsPerDay: number };
+type BranchSettings = { locationId: string; name: string; storeName: string; storeId: string; requirePaymentsMatch: boolean; serviceChargeToStaff: boolean; shiftsPerDay: number };
 type Mapping = { id: string; kind: string; externalName: string; target: string; scope: string; paxOverride: string };
 
 const CHANNEL_KINDS: Record<string, string> = {
@@ -462,6 +462,7 @@ function DiscountDialog({ value, contraAccounts, onClose }: { value: DiscountTyp
 function BranchSettingsCard({ settings }: { settings: BranchSettings }) {
   const router = useRouter();
   const [storeName, setStoreName] = useState(settings.storeName);
+  const [storeId, setStoreId] = useState(settings.storeId);
   const save = useAction(saveSettingAction, { onSuccess: () => router.refresh() });
   const set = (key: string, value: unknown) => save.run({ key, locationId: settings.locationId, value });
   return (
@@ -476,6 +477,20 @@ function BranchSettingsCard({ settings }: { settings: BranchSettings }) {
       >
         <Field id={`store-${settings.locationId}`} label="Loyverse store name" className="flex-1">
           <Input id={`store-${settings.locationId}`} value={storeName} onChange={(e) => setStoreName(e.target.value)} />
+        </Field>
+        <Button type="submit" variant="outline" disabled={save.pending}>
+          Save
+        </Button>
+      </form>
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          set("loyverse.storeId", storeId);
+        }}
+      >
+        <Field id={`storeid-${settings.locationId}`} label="Loyverse store ID (for automatic sync)" className="flex-1">
+          <Input id={`storeid-${settings.locationId}`} value={storeId} onChange={(e) => setStoreId(e.target.value)} placeholder="from Loyverse Back Office → Stores" />
         </Field>
         <Button type="submit" variant="outline" disabled={save.pending}>
           Save

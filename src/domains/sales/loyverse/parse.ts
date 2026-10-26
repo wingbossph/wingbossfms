@@ -25,6 +25,8 @@ export type ParsedReceipt = {
   cashierName: string | null;
   posDevice: string | null;
   lines: ParsedLine[];
+  /** Exact split per payment type (API sync); CSV exports only give the joined names. */
+  payments?: { name: string; amountCents: string }[];
 };
 
 export type ParsedSummaryRow = { name: string; qty?: string; grossCents: bigint; discountCents?: bigint; refundCents?: bigint; netCents: bigint };

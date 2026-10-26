@@ -1,0 +1,13 @@
+Date,Receipt number,Receipt type,Gross sales,Discounts,Net sales,Taxes,Total collected,Cost of goods,Gross profit,Payment type,Description,Dining option,POS,Store,Cashier name,Customer name,Customer contacts,Status
+10/26/2026 11:25 AM,1-2001,Sale,1996.00,0.00,1996.00,0.00,1996.00,0.00,1996.00,GCash 1,4 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 11:21 AM,1-2002,Sale,998.00,0.00,998.00,0.00,998.00,0.00,998.00,Cash,2 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 12:58 PM,1-2003,Sale,998.00,0.00,998.00,0.00,998.00,0.00,998.00,Maya Card,2 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 1:32 PM,1-2004,Sale,1704.00,0.00,1704.00,0.00,1704.00,0.00,1704.00,Cash,3 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 2:59 PM,1-2005,Sale,998.00,0.00,998.00,0.00,998.00,0.00,998.00,Maya Card,2 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 3:41 PM,1-2006,Sale,2272.00,0.00,2272.00,0.00,2272.00,0.00,2272.00,Maya Card,4 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 3:09 PM,1-2007,Sale,1996.00,0.00,1996.00,0.00,1996.00,0.00,1996.00,GCash 1,4 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 4:51 PM,1-2008,Sale,1704.00,0.00,1704.00,0.00,1704.00,0.00,1704.00,GCash 1,3 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 5:41 PM,1-2009,Sale,1136.00,0.00,1136.00,0.00,1136.00,0.00,1136.00,Cash,2 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 6:15 PM,1-2010,Sale,1497.00,0.00,1497.00,0.00,1497.00,0.00,1497.00,Cash,3 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 7:47 PM,1-2011,Sale,499.00,0.00,499.00,0.00,499.00,0.00,499.00,GCash 2,1 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed
+10/26/2026 7:58 PM,1-2012,Sale,1996.00,0.00,1996.00,0.00,1996.00,0.00,1996.00,Cash,4 x Unlimited Wings,Dine in,POS 1,Wingboss Lanang,Lito,,,Closed

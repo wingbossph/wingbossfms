@@ -115,6 +115,9 @@ export function matchSettlements(stmt: readonly StmtLine[], cands: readonly Sett
       add(`inst-biz|${c.institution ?? c.channelId}|${c.businessDate}`, c);
     }
     const desc = s.description.toLowerCase();
+    const mentions = (inst: string) => desc.includes(inst) || (inst === "maya" && desc.includes("paymaya"));
+    // A line that names a provider (e.g. "GRAB PAYOUT") only matches that provider's payouts.
+    const namedInsts = [...new Set(cands.map((c) => c.institution?.toLowerCase()).filter((x): x is string => !!x))].filter(mentions);
     let best: SettlementProposal | null = null;
     let bestRank = -Infinity;
     for (const g of groups.values()) {
@@ -124,10 +127,12 @@ export function matchSettlements(stmt: readonly StmtLine[], cands: readonly Sett
       const tol = (gross * BigInt(toleranceBp)) / 10_000n;
       if (abs(diff) > (tol > 100n ? tol : 100n)) continue;
       const inst = g[0].institution?.toLowerCase();
-      const named = inst ? desc.includes(inst) || (inst === "maya" && desc.includes("paymaya")) : false;
+      if (namedInsts.length && (!inst || !namedInsts.includes(inst))) continue;
+      const named = inst ? mentions(inst) : false;
       const score = Math.max(50, (diff === 0n ? 95 : 85) - Math.abs(daysBetween(g[0].expectedOn, s.date)) * 3 + (named ? 5 : 0));
-      // Rank: closest amount first, then the description naming the provider, then the date.
-      const rank = -Number(abs(diff)) * 10 + (named ? 5 : 0) - Math.abs(daysBetween(g[0].expectedOn, s.date));
+      // Rank: the payout closest to its expected date first (providers pay on schedule), then the
+      // closest amount, then the description naming the provider.
+      const rank = -Math.abs(daysBetween(g[0].expectedOn, s.date)) * 1e12 - Number(abs(diff)) * 10 + (named ? 5 : 0);
       if (rank > bestRank) {
         bestRank = rank;
         best = { statementLineId: s.id, settlementIds: g.map((c) => c.id), score: Math.min(score, 100), differenceCents: diff };

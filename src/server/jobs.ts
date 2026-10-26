@@ -11,6 +11,7 @@ import type { CurrentUser } from "@/server/auth/session";
 import { emailHtml, sendEmail } from "@/server/email";
 import { toPdf } from "@/server/export/render";
 import { formatPeso } from "@/lib/money";
+import { locationsWithLoyverseSync, syncLoyverse } from "@/domains/sales/loyverse/sync";
 
 /** The Owner as a report reader (jobs have no session). */
 async function ownerReader(): Promise<CurrentUser> {
@@ -35,6 +36,20 @@ export const JOBS = {
     const owner = await db.user.findFirstOrThrow({ where: { isOwner: true } });
     const created = await db.$transaction((tx) => runRecurring(tx, manilaDateString(), owner.id), { timeout: 60_000 });
     return { created };
+  },
+  /** Pulls Loyverse receipts for every branch with a store ID (needs LOYVERSE_API_TOKEN). */
+  "loyverse-sync": async () => {
+    if (!process.env.LOYVERSE_API_TOKEN) return { skipped: "no LOYVERSE_API_TOKEN" };
+    const owner = await db.user.findFirstOrThrow({ where: { isOwner: true } });
+    const results: Record<string, unknown> = {};
+    for (const locationId of await locationsWithLoyverseSync()) {
+      try {
+        results[locationId] = await syncLoyverse(locationId, owner.id);
+      } catch (e) {
+        results[locationId] = { error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    return results;
   },
   /** Yesterday's sales for all locations, each morning. */
   "daily-sales-email": async () => {

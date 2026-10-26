@@ -7,6 +7,7 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { DEMO_PASSWORD, seedBase } from "./base";
+import { seedDemo } from "./demo";
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
@@ -18,6 +19,11 @@ async function main() {
   const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "owner@wingboss.ph";
   await seedBase(db, { ownerEmail, ownerPassword: process.env.SEED_OWNER_PASSWORD ?? DEMO_PASSWORD });
   console.log("Seeded base data: 4 locations, roles, chart of accounts, users, items, menu.");
+  if (process.env.SEED_DEMO === "1") {
+    console.log("Adding 60 days of demo activity (takes a few minutes)…");
+    const { start, end } = await seedDemo(db);
+    console.log(`Demo data ${start} to ${end}. Sample files are in ./samples (BPI statement, Loyverse exports).`);
+  }
 
   console.log(`
 Demo logins
