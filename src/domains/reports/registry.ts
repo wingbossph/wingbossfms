@@ -3,9 +3,12 @@ import { db } from "@/server/db";
 import { scopeLocations, type CurrentUser } from "@/server/auth/session";
 import { AuthorizationError } from "@/server/auth/session";
 import type { ReportDoc } from "./doc";
+import { UserFacingError } from "@/lib/errors";
 import { buildBalanceSheet, buildCashFlow, buildEquityStatement, buildPnl, buildTrialBalance, combine, loadBalances, loadChart, profitOf } from "./financials";
 import { asOfOf, dayBefore, fmtDate, fmtRange, monthsIn, rangeOf, type ReportParams } from "./params";
 import { buildGeneralLedger, buildJournal } from "./ledger-reports";
+import { bankReconciliationDoc, channelSettlementsDoc } from "./banking-reports";
+import { canUseAccount } from "@/domains/banking/queries";
 import { commissaryStatement, stockOnHand, transfersReport, usageReport, varianceDoc, wasteReport } from "./inventory-reports";
 
 export type ReportDef = {
@@ -226,6 +229,30 @@ Object.assign(REPORTS, {
     async build(user, p) {
       const { from, to } = rangeOf(p);
       return commissaryStatement(await reportScope(user, "reports:inventory:view", p), from, to);
+    },
+  },
+  "bank-reconciliation": {
+    title: "Bank reconciliation",
+    group: "Banking",
+    description: "Statement balance vs books with deposits in transit and outstanding cheques, for one account.",
+    permission: "banking:view",
+    filters: ["asOf", "moneyAccount"],
+    async build(user, p) {
+      const ma = p.moneyAccount ? await db.moneyAccount.findUnique({ where: { id: p.moneyAccount } }) : null;
+      if (!ma) throw new UserFacingError("Choose an account.");
+      if (!canUseAccount(user, ma, "banking:view")) throw new AuthorizationError();
+      return bankReconciliationDoc(ma.id, asOfOf(p));
+    },
+  },
+  "channel-settlements": {
+    title: "Card, QR and Grab payouts",
+    group: "Banking",
+    description: "Expected vs received payouts per sales day, and the actual fee rate you paid.",
+    permission: "banking:view",
+    filters: ["range", "location"],
+    async build(user, p) {
+      const { from, to } = rangeOf(p);
+      return channelSettlementsDoc(await reportScope(user, "banking:view", p), from, to);
     },
   },
 } satisfies Record<string, ReportDef>);

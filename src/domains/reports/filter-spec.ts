@@ -5,6 +5,7 @@ import type { FilterSpec } from "@/components/reports/report-filters";
 import { asOfOf, rangeOf, type ReportParams } from "./params";
 import type { ReportDef } from "./registry";
 import { SOURCE_LABEL } from "./ledger-reports";
+import { statementAccountsFor } from "@/domains/banking/queries";
 
 /** Builds the filter bar for a report from its declared filters. */
 export async function filterSpecFor(def: ReportDef, user: CurrentUser, p: ReportParams): Promise<FilterSpec> {
@@ -40,6 +41,10 @@ export async function filterSpecFor(def: ReportDef, user: CurrentUser, p: Report
   if (f.has("source")) {
     spec.sources = Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label }));
     spec.source = p.source;
+  }
+  if (f.has("moneyAccount")) {
+    const accounts = await statementAccountsFor(user, def.permission);
+    spec.extra = [...(spec.extra ?? []), { param: "moneyAccount", label: "Account", value: p.moneyAccount ?? "", options: [{ value: "", label: "Choose…" }, ...accounts.map((a) => ({ value: a.id, label: a.name }))] }];
   }
   return spec;
 }

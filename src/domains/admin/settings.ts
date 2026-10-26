@@ -23,6 +23,10 @@ export const SETTING_DEFAULTS = {
   "alerts.personalGcashShareBp": 3000,
   "alerts.cashShortThresholdCents": "20000",
   "reports.emailRecipients": "" as string,
+  /** Auto-match: how many days apart a statement line and a book entry may be. */
+  "bank.matchWindowDays": 3,
+  /** Channel payouts auto-match when within this share of gross (real MDR vs the configured rate). */
+  "bank.settlementToleranceBp": 100,
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

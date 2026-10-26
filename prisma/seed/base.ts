@@ -9,6 +9,7 @@ import { DEFAULT_ROLES, PERMISSIONS } from "@/server/auth/permissions";
 import { ACCOUNTS, ACCOUNT_GROUPS, accountTypeForGroup } from "@/domains/ledger/coa-template";
 import { createMoneyAccount } from "@/domains/cash/money-accounts";
 import { createLocation } from "@/domains/admin/locations";
+import { ensureStatementFormats } from "@/domains/banking/setup";
 import { ITEMS, ITEM_CATEGORIES, PRODUCTS } from "./catalog";
 
 export const DEMO_PASSWORD = "Wingboss2026!";
@@ -318,6 +319,8 @@ export async function seedBase(db: PrismaClient, opts: { ownerEmail: string; own
           });
         }
       }
+
+      await ensureStatementFormats(tx);
 
       return {
         roles,

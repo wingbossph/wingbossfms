@@ -115,6 +115,8 @@ export async function reverseEntry(
 ): Promise<string> {
   const original = await tx.journalEntry.findUniqueOrThrow({ where: { id: entryId }, include: { lines: true, period: true } });
   if (original.status === "VOIDED") throw new UserFacingError("This entry is already voided.");
+  const matched = await tx.bankMatchItem.count({ where: { journalLine: { entryId: original.id } } });
+  if (matched) throw new UserFacingError("This entry is matched to a bank statement line. Unmatch it in Banking first.");
 
   let date = opts.date ?? original.date.toISOString().slice(0, 10);
   if (!opts.date && original.period.status === "CLOSED") date = opts.todayYmd;
