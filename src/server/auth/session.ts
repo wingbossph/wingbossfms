@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/server/db";
-import { buildAccess, type Access } from "./rbac";
+import type { Access } from "./rbac";
+import { loadAccess } from "./access";
 
 export class AuthorizationError extends Error {
   constructor(message = "You don't have permission to do that.") {
@@ -38,13 +39,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth();
   if (!session?.user?.id) return null;
 
-  const user = await db.user.findUnique({
-    where: { id: session.user.id },
-    include: {
-      roleAssignments: { include: { role: { include: { permissions: true } } } },
-      permissions: true,
-    },
-  });
+  const user = await db.user.findUnique({ where: { id: session.user.id } });
   if (!user || !user.isActive || user.sessionVersion !== session.sv) return null;
 
   let pinnedLocationId: string | null = null;
@@ -56,27 +51,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     pinnedLocationId = device.locationId;
   }
 
-  const activeLocations = await db.location.findMany({
-    where: { isActive: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, code: true, name: true, type: true },
-  });
-
-  const access = buildAccess({
-    userId: user.id,
-    isOwner: user.isOwner,
-    roles: user.roleAssignments.map((ra) => ({
-      locationId: ra.locationId,
-      permissions: ra.role.permissions.map((p) => p.permissionKey),
-    })),
-    overrides: user.permissions.map((p) => ({
-      permissionKey: p.permissionKey,
-      locationId: p.locationId,
-      effect: p.effect,
-    })),
-    allLocationIds: activeLocations.map((l) => l.id),
-    pinnedLocationId,
-  });
+  const { user: full, access, activeLocations } = await loadAccess(db, user.id, pinnedLocationId);
 
   return {
     id: user.id,
@@ -88,7 +63,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     access,
     roleNames: user.isOwner
       ? ["Owner"]
-      : [...new Set(user.roleAssignments.map((ra) => ra.role.name))],
+      : [...new Set(full.roleAssignments.map((ra) => ra.role.name))],
     locations: activeLocations.filter((l) => access.locationIds.includes(l.id)),
   };
 });

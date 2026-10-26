@@ -100,6 +100,8 @@ describe("sales → shift close → deposit (Lanang cashier flow)", () => {
 
   it("closes the shift: float stays, cash sales move to undeposited, shortage is booked", async () => {
     // Float ₱2,000 + cash sales ₱3,000 = ₱5,000 expected; counted ₱4,950 → short ₱50.
+    const overShort = await systemAccount("CASH_OVER_SHORT");
+    const osBefore = await glBalance(overShort.id, f.lanang.id);
     const res = await tx((t) =>
       closeShift(t, { reportId, bills: { "1000": 4, "500": 1, "200": 2, "100": 0, "50": 1, "20": 0 }, coins: 0n, otherCashIn: 0n, otherCashOut: 0n, reason: "Wrong change given" }, f.cashierLanang.id),
     );
@@ -111,12 +113,13 @@ describe("sales → shift close → deposit (Lanang cashier flow)", () => {
     expect(await glBalance(undeposited.glAccountId)).toBe(295000n);
     // Cash sales went into the drawer; the close moved them (expected − float) out again.
     expect(await glBalance(drawer.glAccountId)).toBe(0n);
-    expect(await glBalance((await systemAccount("CASH_OVER_SHORT")).id, f.lanang.id)).toBe(5000n);
+    expect((await glBalance(overShort.id, f.lanang.id)) - osBefore).toBe(5000n);
     expect(await trialBalanceDifference()).toBe(0n);
   });
 
   it("deposits undeposited cash to BPI", async () => {
     const undeposited = f.locMoney(f.lanang.id, "UNDEPOSITED_CASH");
+    const bpiBefore = await glBalance(f.money("BPI Bank").glAccountId, f.lanang.id);
     await tx((t) =>
       recordMoneyTransfer(
         t,
@@ -125,7 +128,7 @@ describe("sales → shift close → deposit (Lanang cashier flow)", () => {
       ),
     );
     expect(await glBalance(undeposited.glAccountId)).toBe(0n);
-    expect(await glBalance(f.money("BPI Bank").glAccountId, f.lanang.id)).toBe(295000n + 20000n);
+    expect((await glBalance(f.money("BPI Bank").glAccountId, f.lanang.id)) - bpiBefore).toBe(295000n);
   });
 
   it("reopening reverses the sales and shift-close postings", async () => {
