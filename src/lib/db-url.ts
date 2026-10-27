@@ -10,10 +10,10 @@ function libpqSsl(url: string | undefined) {
 
 /** Pooled connection for the app at runtime. */
 export function runtimeDatabaseUrl() {
-  return libpqSsl(process.env.DATABASE_URL ?? process.env.POSTGRES_PRISMA_URL ?? process.env.POSTGRES_URL);
+  return libpqSsl(process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL);
 }
 
 /** Direct (non-pooled) connection for migrations. */
 export function directDatabaseUrl() {
-  return process.env.DIRECT_URL ?? process.env.POSTGRES_URL_NON_POOLING ?? process.env.DATABASE_URL ?? process.env.POSTGRES_PRISMA_URL ?? process.env.POSTGRES_URL;
+  return process.env.DIRECT_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL;
 }
