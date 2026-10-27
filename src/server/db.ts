@@ -1,11 +1,12 @@
 import "server-only";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
+import { runtimeDatabaseUrl } from "@/lib/db-url";
 
 export type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
 function createClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  const adapter = new PrismaPg({ connectionString: runtimeDatabaseUrl() });
   return new PrismaClient({ adapter });
 }
 

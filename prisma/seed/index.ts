@@ -6,10 +6,11 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
+import { runtimeDatabaseUrl } from "@/lib/db-url";
 import { DEMO_PASSWORD, seedBase } from "./base";
 import { seedDemo } from "./demo";
 
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: runtimeDatabaseUrl() }) });
 
 async function main() {
   if ((await db.location.count()) > 0) {
