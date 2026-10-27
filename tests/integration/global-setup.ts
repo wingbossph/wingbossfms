@@ -10,6 +10,15 @@ export const TEST_OWNER = { email: "owner@test.local", password: "Test-password-
 export default async function setup() {
   const url = process.env.TEST_DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/wingboss_test";
   if (!/test/i.test(url)) throw new Error(`Refusing to reset a database whose URL doesn't contain "test": ${url}`);
+  // Create the database on a fresh server (CI); reuse it otherwise.
+  const parsed = new URL(url);
+  const name = decodeURIComponent(parsed.pathname.slice(1));
+  parsed.pathname = "/postgres";
+  const admin = new Client({ connectionString: parsed.toString() });
+  await admin.connect();
+  const exists = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]);
+  if (!exists.rowCount) await admin.query(`CREATE DATABASE "${name.replace(/"/g, '""')}"`);
+  await admin.end();
   const client = new Client({ connectionString: url });
   await client.connect();
   await client.query("DROP SCHEMA IF EXISTS public CASCADE");
