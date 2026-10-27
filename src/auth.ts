@@ -2,6 +2,7 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { loginIdField } from "@/lib/login-id";
 import { authConfig, PASSWORD_IDLE_MINUTES } from "@/auth.config";
 import { db } from "@/server/db";
 import { DEVICE_COOKIE, findDeviceByToken } from "@/server/auth/device";
@@ -19,7 +20,7 @@ class DeviceNotRegistered extends CredentialsSignin {
 }
 
 const passwordSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
+  email: loginIdField,
   password: z.string().min(1).max(200),
 });
 

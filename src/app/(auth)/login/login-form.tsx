@@ -14,11 +14,14 @@ export function LoginForm({ next }: { next: string }) {
       <h1 className="text-2xl">Log in</h1>
       <input type="hidden" name="next" value={next} />
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">Email or username</Label>
         <Input
           id="email"
           name="email"
-          type="email"
+          type="text"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           autoComplete="username"
           required
           className="h-11 border-neutral-700 bg-black text-white"

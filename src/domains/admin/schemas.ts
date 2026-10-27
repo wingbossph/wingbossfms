@@ -1,3 +1,4 @@
+import { loginIdField } from "@/lib/login-id";
 import { z } from "zod";
 import { parsePeso } from "@/lib/money";
 
@@ -52,11 +53,7 @@ export const editLocationSchema = locationSchema.extend({
 
 export const userSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email()
+  email: loginIdField
     .optional()
     .or(z.literal("").transform(() => undefined)),
   password: z

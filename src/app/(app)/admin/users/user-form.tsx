@@ -95,7 +95,7 @@ export function UserForm({
         <Field id="name" label="Full name" error={fieldError("name")}>
           <Input id="name" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} required />
         </Field>
-        <Field id="email" label="Email (for email login)" error={fieldError("email")} hint="Leave blank for PIN-only staff">
+        <Field id="email" label="Email or username (for password login)" error={fieldError("email")} hint="Leave blank for PIN-only staff">
           <Input id="email" type="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} autoComplete="off" />
         </Field>
         <Field

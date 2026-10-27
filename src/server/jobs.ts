@@ -11,6 +11,7 @@ import type { CurrentUser } from "@/server/auth/session";
 import { emailHtml, sendEmail } from "@/server/email";
 import { toPdf } from "@/server/export/render";
 import { formatPeso } from "@/lib/money";
+import { isEmail } from "@/lib/login-id";
 import { locationsWithLoyverseSync, syncLoyverse } from "@/domains/sales/loyverse/sync";
 
 /** The Owner as a report reader (jobs have no session). */
@@ -22,7 +23,7 @@ async function ownerReader(): Promise<CurrentUser> {
 
 async function recipients(owner: CurrentUser) {
   const extra = (await getSetting(db, "reports.emailRecipients")).split(/[,;\s]+/).filter((e) => /^[^@\s]+@[^@\s]+$/.test(e));
-  return [...new Set([...(owner.email ? [owner.email] : []), ...extra])];
+  return [...new Set([...(isEmail(owner.email) ? [owner.email!] : []), ...extra])];
 }
 
 const dayBefore = (ymd: string) => new Date(Date.parse(`${ymd}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
