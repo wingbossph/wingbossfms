@@ -335,7 +335,9 @@ export async function seedBase(db: PrismaClient, opts: { ownerEmail: string; own
         channelIds,
       };
     },
-    { timeout: 120_000 },
+    // One transaction so a failed seed leaves nothing behind. Generous limit: a build
+    // server far from the database (Vercel US ↔ Supabase Singapore) pays ~0.2 s per query.
+    { timeout: 900_000, maxWait: 60_000 },
   );
 }
 
