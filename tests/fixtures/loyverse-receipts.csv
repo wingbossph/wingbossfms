@@ -1,0 +1,5 @@
+Date,Receipt number,Receipt type,Gross sales,Discounts,Net sales,Taxes,Total collected,Cost of goods,Gross profit,Payment type,Description,Dining option,POS,Store,Cashier name,Customer name,Customer contacts,Comment,Status
+10/20/2026 6:15 PM,1-1001,Sale,"1,196.00",0.00,"1,196.00",0.00,"1,196.00",0.00,"1,196.00",Cash,,Dine in,POS 1,Wingboss Lanang,Lito,,,,Closed
+10/20/2026 7:02 PM,1-1002,Sale,"1,796.00",179.60,"1,616.40",0.00,"1,616.40",0.00,"1,616.40",GCash,,Dine in,POS 1,Wingboss Lanang,Lito,,,,Closed
+10/20/2026 8:40 PM,1-1003,Refund,-99.00,0.00,-99.00,0.00,-99.00,0.00,-99.00,Cash,,Dine in,POS 1,Wingboss Lanang,Lito,,,,Closed
+10/21/2026 12:10 AM,1-1004,Sale,499.00,0.00,499.00,0.00,499.00,0.00,499.00,Maya Card,,Dine in,POS 1,Wingboss Lanang,Joy,,,,Closed

@@ -1,6 +1,11 @@
-# Open questions for the owner (pre-Phase 1)
+# Owner decisions
 
-Each question comes with a **proposed default**. Reply "defaults OK" for any you're happy with. ★ marks the ones that change the profit numbers.
+**Status (Oct 26, 2026):** the owner accepted all proposed defaults below. The system is built on these defaults. Any of them can still be changed; most are settings, not code. ★ marks the ones that change the profit numbers.
+
+Still useful when available:
+- a real Loyverse export of each type (Q8)
+- the current Google Sheets tab and column headers (Q15)
+- the actual Maya and Grab fee rates (Q10)
 
 ## Money and accounting
 

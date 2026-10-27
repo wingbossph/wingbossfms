@@ -115,7 +115,6 @@ model Location {
   loyverseReceipts    LoyverseReceipt[]
   loyverseMappings    LoyverseMapping[]
   holidays            Holiday[]
-  dailySummaries      DailySummary[]
   alerts              Alert[]
   auditLogs           AuditLog[]
   approvalRules       ApprovalRule[]
@@ -340,6 +339,8 @@ model Attachment {
   sizeBytes    Int
   entityType   String?
   entityId     String?
+  /// Location of the record it belongs to; drives who may download it.
+  locationId   String?
   uploadedById String
   createdAt    DateTime @default(now())
 
@@ -587,9 +588,18 @@ model OwnerEquityTransaction {
 /// Optional, OFF by default. Spreads a cost posted at sourceLocation
 /// (e.g. Head Office) to other locations by fixed %, as separate
 /// ALLOCATION journal entries, so P&L can show "direct" vs "after allocation".
+enum AllocationMethod {
+  /// Fixed % per location (shares sum to 100%).
+  FIXED_SHARES
+  /// In proportion to the value of transfers each location received that month
+  /// (spreads the commissary's net cost to the branches it supplied).
+  TRANSFER_VALUE
+}
+
 model AllocationRule {
   id               String            @id @default(cuid())
   name             String
+  method           AllocationMethod  @default(FIXED_SHARES)
   isActive         Boolean           @default(false)
   sourceLocationId String
   sourceLocation   Location          @relation(fields: [sourceLocationId], references: [id])
@@ -736,6 +746,8 @@ enum DocStatus {
 model MoneyTransfer {
   id             String            @id @default(cuid())
   type           MoneyTransferType
+  /// Location the movement is booked to (e.g. the branch making a deposit).
+  locationId     String
   date           DateTime          @db.Date
   fromAccountId  String
   fromAccount    MoneyAccount      @relation("MoneyFrom", fields: [fromAccountId], references: [id])
@@ -847,6 +859,8 @@ model SalesReport {
   grossCents          BigInt      @default(0)
   discountCents       BigInt      @default(0)
   voidCents           BigInt      @default(0)
+  /// Refunds given back to customers (deducted from net sales).
+  refundCents         BigInt      @default(0)
   serviceChargeCents  BigInt      @default(0)
   netCents            BigInt      @default(0)
   paymentsCents       BigInt      @default(0)
@@ -1023,6 +1037,8 @@ model LoyverseReceipt {
   discountCents BigInt
   netCents      BigInt
   paymentType   String // as named in Loyverse
+  /// Split payments [{ name, amountCents }] when known.
+  payments      Json?
   cashierName   String?
   posDevice     String?
   importId      String
@@ -1102,36 +1118,38 @@ enum PaymentTerms {
 /// An expense or supplier bill. Lines can hit expense accounts or, when
 /// itemId is set, inventory (creates a PURCHASE stock movement).
 model Expense {
-  id               String            @id @default(cuid())
-  number           Int               @unique @default(autoincrement())
-  locationId       String
-  location         Location          @relation(fields: [locationId], references: [id])
-  date             DateTime          @db.Date
-  supplierId       String?
-  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
-  terms            PaymentTerms      @default(PAID_NOW)
-  dueDate          DateTime?         @db.Date
-  receiptNo        String? // OR / SI / invoice no.
-  isVatInvoice     Boolean           @default(false)
-  vatCents         BigInt            @default(0) // tracked only; non-VAT business expenses it
-  totalCents       BigInt
-  paidCents        BigInt            @default(0)
-  status           DocStatus         @default(DRAFT)
+  id                     String            @id @default(cuid())
+  number                 Int               @unique @default(autoincrement())
+  locationId             String
+  location               Location          @relation(fields: [locationId], references: [id])
+  date                   DateTime          @db.Date
+  supplierId             String?
+  supplier               Supplier?         @relation(fields: [supplierId], references: [id])
+  terms                  PaymentTerms      @default(PAID_NOW)
+  /// For PAID_NOW: where the money came from (drawer, petty cash, GCash, bank, owner).
+  paidFromMoneyAccountId String?
+  dueDate                DateTime?         @db.Date
+  receiptNo              String? // OR / SI / invoice no.
+  isVatInvoice           Boolean           @default(false)
+  vatCents               BigInt            @default(0) // tracked only; non-VAT business expenses it
+  totalCents             BigInt
+  paidCents              BigInt            @default(0)
+  status                 DocStatus         @default(DRAFT)
   /// Highest permission needed, resolved from ApprovalRule at submit.
-  requiredApproval String?
-  notes            String?
+  requiredApproval       String?
+  notes                  String?
   /// Paid from the cash drawer during a shift → reduces expected cash.
-  salesReportId    String?
-  salesReport      SalesReport?      @relation(fields: [salesReportId], references: [id])
-  recurringId      String?
-  recurring        RecurringExpense? @relation(fields: [recurringId], references: [id])
-  submittedById    String
-  submittedAt      DateTime?
-  approvedById     String?
-  approvedAt       DateTime?
-  journalEntryId   String?           @unique
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  salesReportId          String?
+  salesReport            SalesReport?      @relation(fields: [salesReportId], references: [id])
+  recurringId            String?
+  recurring              RecurringExpense? @relation(fields: [recurringId], references: [id])
+  submittedById          String
+  submittedAt            DateTime?
+  approvedById           String?
+  approvedAt             DateTime?
+  journalEntryId         String?           @unique
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
 
   lines    ExpenseLine[]
   payments ExpensePayment[]
@@ -1544,6 +1562,8 @@ model TransferLine {
   qtyReceived       Decimal? @db.Decimal(18, 4)
   unitCost          Decimal  @db.Decimal(18, 6)
   unitPrice         Decimal  @db.Decimal(18, 6) // = unitCost when markup 0
+  /// Exact cost that left the sender (receipts are prorated from this).
+  costCents         BigInt   @default(0)
   valueCents        BigInt
   discrepancyReason String?
 }
@@ -1567,6 +1587,21 @@ model TransferPresetLine {
   itemId     String
   item       Item           @relation(fields: [itemId], references: [id])
   defaultQty Decimal        @db.Decimal(18, 4)
+}
+
+/// The receiving location pays the sender for transfers received. With a
+/// shared money account this only moves the balance between locations.
+model IntercoSettlement {
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+  payerLocationId String
+  payeeLocationId String
+  amountCents     BigInt
+  moneyAccountId  String?
+  notes           String?
+  journalEntryId  String?  @unique
+  createdById     String
+  createdAt       DateTime @default(now())
 }
 
 // =============================================================================
@@ -1863,17 +1898,20 @@ enum PayrollRunType {
 }
 
 model PayrollRun {
-  id             String         @id @default(cuid())
-  type           PayrollRunType @default(REGULAR)
-  periodStart    DateTime       @db.Date
-  periodEnd      DateTime       @db.Date
-  payDate        DateTime       @db.Date
-  status         DocStatus      @default(DRAFT)
-  preparedById   String
-  approvedById   String?
-  journalEntryId String?        @unique
-  createdAt      DateTime       @default(now())
-  lines          PayrollLine[]
+  id                     String         @id @default(cuid())
+  type                   PayrollRunType @default(REGULAR)
+  periodStart            DateTime       @db.Date
+  periodEnd              DateTime       @db.Date
+  payDate                DateTime       @db.Date
+  status                 DocStatus      @default(DRAFT)
+  preparedById           String
+  approvedById           String?
+  journalEntryId         String?        @unique
+  paidAt                 DateTime?
+  paidFromMoneyAccountId String?
+  paymentJournalEntryId  String?        @unique
+  createdAt              DateTime       @default(now())
+  lines                  PayrollLine[]
 
   @@unique([type, periodStart, periodEnd])
 }
@@ -1943,27 +1981,6 @@ model EmployeeLoan {
 // =============================================================================
 // 10. REPORTING SUPPORT, ALERTS, JOBS, IMPORTS
 // =============================================================================
-
-/// Pre-aggregated per location per day for a < 2 s dashboard. Rebuilt for a
-/// (location, date) whenever a posting touches it; fully rebuildable.
-model DailySummary {
-  locationId      String
-  location        Location @relation(fields: [locationId], references: [id])
-  date            DateTime @db.Date
-  grossSalesCents BigInt   @default(0)
-  discountsCents  BigInt   @default(0)
-  netSalesCents   BigInt   @default(0)
-  pax             Decimal  @default(0) @db.Decimal(10, 2)
-  cogsCents       BigInt   @default(0)
-  laborCents      BigInt   @default(0)
-  opexCents       BigInt   @default(0)
-  /// { channelId: cents }
-  byChannel       Json     @default("{}")
-  wingsUsedQty    Decimal? @db.Decimal(18, 4)
-  updatedAt       DateTime @updatedAt
-
-  @@id([locationId, date])
-}
 
 enum AlertSeverity {
   INFO

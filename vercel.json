@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/recurring-expenses",
+      "schedule": "5 16 * * *"
+    },
+    {
+      "path": "/api/cron/daily-sales-email",
+      "schedule": "55 22 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-pnl-email",
+      "schedule": "10 23 * * *"
+    },
+    {
+      "path": "/api/cron/loyverse-sync",
+      "schedule": "40 15 * * *"
+    }
+  ]
+}
