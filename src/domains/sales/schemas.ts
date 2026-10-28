@@ -31,6 +31,8 @@ export const salesDraftSchema = z.object({
       }),
     )
     .max(100),
+  /** Consolidated entry: one gross total for the day instead of items (replaces the item lines). */
+  consolidated: z.object({ gross: pesoField, pax: qtyField.or(z.literal("").transform(() => "0")) }).nullable().optional(),
   serviceCharge: pesoField,
   payments: z
     .array(z.object({ channelId: z.string().min(1), amount: pesoField, reference: z.string().trim().max(80).optional().default("") }))

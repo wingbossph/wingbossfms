@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { requireUser } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { formatBusinessDate } from "@/lib/dates";
-import { drawerActivity, priceMap } from "@/domains/sales/service";
+import { CONSOLIDATED_PRODUCT, drawerActivity, priceMap } from "@/domains/sales/service";
 import { loyverseCheck, LOYVERSE_DISCOUNT_NOTE } from "@/domains/sales/loyverse/import";
 import { SalesEditor } from "./sales-editor";
 import { ShiftClose } from "./shift-close";
@@ -88,7 +88,11 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
           importedLines: report.lines
             .filter((l) => l.source !== "MANUAL")
             .map((l) => ({ name: l.product.name, qty: l.qty.toString(), grossCents: s(l.grossCents), paxHundredths: s(BigInt(Math.round(Number(l.pax) * 100))) })),
-          manualLines: Object.fromEntries(report.lines.filter((l) => l.source === "MANUAL").map((l) => [l.productId, l.qty.toString()])),
+          manualLines: Object.fromEntries(report.lines.filter((l) => l.source === "MANUAL" && l.product.name !== CONSOLIDATED_PRODUCT).map((l) => [l.productId, l.qty.toString()])),
+          consolidated: (() => {
+            const l = report.lines.find((x) => x.source === "MANUAL" && x.product.name === CONSOLIDATED_PRODUCT);
+            return l ? { gross: formatPeso(l.grossCents, { symbol: false }), pax: Number(l.pax).toString() } : null;
+          })(),
           discounts: report.discounts.map((d) => ({
             discountTypeId: d.discountTypeId,
             amount: formatPeso(d.amountCents, { symbol: false }),
@@ -101,7 +105,7 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
           voids: report.voids.map((v) => ({ amount: formatPeso(v.amountCents, { symbol: false }), isRefund: v.isRefund, reason: v.reason, receiptNo: v.receiptNo ?? "" })),
           payments: Object.fromEntries(report.payments.map((p) => [p.channelId, { amount: formatPeso(p.amountCents, { symbol: false }), reference: p.reference ?? "" }])),
         }}
-        products={products.map((p) => ({ id: p.id, name: p.name, type: p.type, priceCents: s(prices.get(p.id) ?? 0n), paxPerUnit: p.paxPerUnit.toString() }))}
+        products={products.filter((p) => p.name !== CONSOLIDATED_PRODUCT).map((p) => ({ id: p.id, name: p.name, type: p.type, priceCents: s(prices.get(p.id) ?? 0n), paxPerUnit: p.paxPerUnit.toString() }))}
         discountTypes={discountTypes.map((d) => ({ id: d.id, name: d.name, rateBp: d.defaultRateBp, requiresIdentity: d.requiresIdentity }))}
         channels={channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
       />

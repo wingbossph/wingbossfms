@@ -19,7 +19,7 @@ const KIND_LABEL: Record<string, string> = {
   RECEIPTS_BY_ITEM: "Receipts by item",
   SALES_BY_PAYMENT_TYPE: "Sales by payment type (one day)",
   SALES_BY_ITEM: "Sales by item (one day)",
-  SALES_SUMMARY: "Sales summary (check only)",
+  SALES_SUMMARY: "Sales summary (check only, no dates)",
 };
 
 export function ImportWizard({
@@ -44,7 +44,7 @@ export function ImportWizard({
   const [pending, start] = useTransition();
   const [reports, setReports] = useState<string[]>([]);
 
-  const needsDate = files.some((f) => f.preview && ["SALES_BY_PAYMENT_TYPE", "SALES_BY_ITEM", "SALES_SUMMARY"].includes(f.preview.kind));
+  const needsDate = files.some((f) => f.preview && !f.preview.daily && ["SALES_BY_PAYMENT_TYPE", "SALES_BY_ITEM", "SALES_SUMMARY"].includes(f.preview.kind));
   const unmappedItems = [...new Set(files.flatMap((f) => f.preview?.unmappedItems ?? []))];
   const unmappedPays = [...new Set(files.flatMap((f) => f.preview?.unmappedPaymentTypes ?? []))];
   const locChannels = channels.filter((c) => c.locationIds.includes(locationId));
@@ -90,11 +90,11 @@ export function ImportWizard({
     start(async () => {
       const ids: string[] = [];
       for (const f of files) {
-        if (!f.preview || f.preview.kind === "SALES_SUMMARY") continue;
+        if (!f.preview || (f.preview.kind === "SALES_SUMMARY" && !f.preview.daily)) continue;
         const res = await commitImportAction({ locationId, fileName: f.name, csv: f.csv, summaryDate, dateOrder });
         if (res.ok) {
           toast.success(`${f.name}: ${res.message}`);
-          ids.push(...(res.reportIds ?? []));
+          if (!f.preview.daily) ids.push(...(res.reportIds ?? []));
         } else toast.error(`${f.name}: ${res.message}`);
       }
       setReports([...new Set(ids)]);
@@ -156,14 +156,19 @@ export function ImportWizard({
           {f.preview && (
             <div className="mt-1 space-y-1">
               <p>
-                {KIND_LABEL[f.preview.kind]} · {f.preview.dates.length ? `${f.preview.dates[0]}${f.preview.dates.length > 1 ? ` to ${f.preview.dates.at(-1)}` : ""}` : "—"}
+                {f.preview.daily ? "Sales summary by day (one total per day)" : KIND_LABEL[f.preview.kind]} · {f.preview.dates.length ? `${f.preview.dates[0]}${f.preview.dates.length > 1 ? ` to ${f.preview.dates.at(-1)}` : ""}` : "—"}
               </p>
               {f.preview.receiptCount > 0 && (
                 <p>
                   {f.preview.receiptCount} receipts: <b>{f.preview.newCount} new</b>, {f.preview.duplicateCount} already imported · net {formatPeso(BigInt(f.preview.netCents))}
                 </p>
               )}
-              {f.preview.kind === "SALES_SUMMARY" && <p>Net sales {formatPeso(BigInt(f.preview.netCents))} (used only to check against receipts).</p>}
+              {f.preview.daily && (
+                <p>
+                  {f.preview.dates.length} days · net {formatPeso(BigInt(f.preview.netCents))}: <b>{f.preview.newCount} new</b>, {f.preview.duplicateCount} already entered (updated if Loyverse changed). Each day is saved as one consolidated total and submitted.
+                </p>
+              )}
+              {f.preview.kind === "SALES_SUMMARY" && !f.preview.daily && <p>Net sales {formatPeso(BigInt(f.preview.netCents))} (used only to check against receipts).</p>}
               {f.preview.splitPaymentReceipts > 0 && (
                 <p className="text-warning">
                   {f.preview.splitPaymentReceipts} receipts were paid with split payments. Their payment amounts can&apos;t be read from this export: also import “Sales by payment type” for that day, or assign them on the sales screen.
@@ -216,7 +221,7 @@ export function ImportWizard({
           ))}
           {unmappedPays.map((name) => (
             <div key={name} className="grid items-center gap-2 sm:grid-cols-[1fr_1fr_7rem]">
-              <span className="font-mono text-sm">Payment: {name}</span>
+              <span className="font-mono text-sm">{name === "Sales summary" ? "Daily totals were paid by" : `Payment: ${name}`}</span>
               <select className={selectClass} value={payMap[name] ?? ""} onChange={(e) => setPayMap((m) => ({ ...m, [name]: e.target.value }))} aria-label={`Channel for ${name}`}>
                 <option value="">Choose payment channel…</option>
                 {locChannels.map((c) => (
