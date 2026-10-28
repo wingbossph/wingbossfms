@@ -1,9 +1,11 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { pdfLogo } from "./logo";
 import { formatCell, type ReportColumn, type ReportDoc, type ReportRow } from "@/domains/reports/doc";
 
 const styles = StyleSheet.create({
   page: { padding: 28, fontSize: 8, fontFamily: "Helvetica", color: "#000" },
   brand: { fontSize: 9, letterSpacing: 2, fontFamily: "Helvetica-Bold" },
+  logo: { width: 66, height: 44, marginBottom: 4 },
   title: { fontSize: 15, fontFamily: "Helvetica-Bold", marginTop: 4 },
   subtitle: { fontSize: 9, color: "#444", marginBottom: 10 },
   header: { flexDirection: "row", backgroundColor: "#000", color: "#fff", fontFamily: "Helvetica-Bold" },
@@ -60,7 +62,8 @@ export function ReportPdf({ doc }: { doc: ReportDoc }) {
   return (
     <Document title={doc.title} author="Wingboss FMS">
       <Page size="A4" orientation={landscape ? "landscape" : "portrait"} style={styles.page}>
-        <Text style={styles.brand}>WINGBOSS</Text>
+        {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf images have no alt */}
+        {pdfLogo() ? <Image style={styles.logo} src={pdfLogo()!} /> : <Text style={styles.brand}>WINGBOSS</Text>}
         <Text style={styles.title}>{doc.title}</Text>
         {doc.subtitle && <Text style={styles.subtitle}>{doc.subtitle}</Text>}
         <Table columns={doc.columns} rows={doc.rows} />

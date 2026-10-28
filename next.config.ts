@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   },
   // exceljs / react-pdf are server-only and large; keep them out of the bundle.
   serverExternalPackages: ["exceljs", "@react-pdf/renderer"],
+  // The PDF exports draw the logo from disk.
+  outputFileTracingIncludes: { "/**": ["./public/logo-dark.png"] },
   poweredByHeader: false,
   async headers() {
     return [

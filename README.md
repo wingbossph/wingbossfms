@@ -152,4 +152,4 @@ tests/unit, tests/integration, tests/e2e, tests/fixtures
 
 Business rules live in plain, unit-tested functions (e.g. `src/domains/payroll/compute.ts`, `src/domains/banking/match.ts`, `src/domains/inventory/wac.ts`, `src/domains/ledger/lines.ts`), not in UI components.
 
-The logo at `public/logo.svg` is a placeholder. Replace it with the real Wingboss logo, keeping the same file name.
+Logo files: `public/logo.png` (white, for dark backgrounds), `public/logo-dark.png` (black, for print and PDFs), app icons in `public/icons/`, plus `src/app/favicon.ico` and `src/app/apple-icon.png`.

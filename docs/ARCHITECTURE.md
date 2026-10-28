@@ -119,7 +119,8 @@ wingbossfms/
 │  └─ seed/                       # index.ts, coa.ts, items.ts, demo-60-days.ts, loyverse-samples/*.csv
 ├─ prisma.config.ts
 ├─ public/
-│  ├─ logo.svg                    # placeholder: drop the real Wingboss logo here
+│  ├─ logo.png, logo-dark.png     # white (dark backgrounds) and black (print, PDFs) logo
+│  ├─ icons/                      # PWA icons (192, 512, maskable)
 │  └─ manifest.webmanifest        # PWA
 ├─ src/
 │  ├─ app/                        # Next.js App Router: routing + thin pages only
