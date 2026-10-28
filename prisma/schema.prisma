@@ -796,6 +796,10 @@ model Product {
   revenueAccount   Account     @relation(fields: [revenueAccountId], references: [id])
   isActive         Boolean     @default(true)
   sortOrder        Int         @default(0)
+  /// Menu category as shown in Loyverse (e.g. "5 BEVERAGES").
+  category         String?
+  /// Loyverse SKU: re-importing the items export updates the same item.
+  sku              String?     @unique
 
   prices        PriceListItem[]
   salesLines    SalesLine[]

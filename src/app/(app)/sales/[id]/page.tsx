@@ -105,7 +105,7 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
           voids: report.voids.map((v) => ({ amount: formatPeso(v.amountCents, { symbol: false }), isRefund: v.isRefund, reason: v.reason, receiptNo: v.receiptNo ?? "" })),
           payments: Object.fromEntries(report.payments.map((p) => [p.channelId, { amount: formatPeso(p.amountCents, { symbol: false }), reference: p.reference ?? "" }])),
         }}
-        products={products.filter((p) => p.name !== CONSOLIDATED_PRODUCT).map((p) => ({ id: p.id, name: p.name, type: p.type, priceCents: s(prices.get(p.id) ?? 0n), paxPerUnit: p.paxPerUnit.toString() }))}
+        products={products.filter((p) => p.name !== CONSOLIDATED_PRODUCT).map((p) => ({ id: p.id, name: p.name, type: p.type, category: p.category ?? undefined, priceCents: s(prices.get(p.id) ?? 0n), paxPerUnit: p.paxPerUnit.toString() }))}
         discountTypes={discountTypes.map((d) => ({ id: d.id, name: d.name, rateBp: d.defaultRateBp, requiresIdentity: d.requiresIdentity }))}
         channels={channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
       />

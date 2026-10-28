@@ -23,6 +23,8 @@ type Product = {
   id: string;
   name: string;
   type: string;
+  /** Loyverse menu category; when set, the entry screen groups by it instead of type. */
+  category?: string;
   priceCents: string;
   paxPerUnit: string;
 };
@@ -212,9 +214,13 @@ export function SalesEditor({
     setQty(id, String(Math.max(0, cur + d)));
   };
   const remaining = totals.netCents - totals.paymentsCents;
-  const groups = Object.keys(TYPE_LABEL).filter((t) =>
-    products.some((p) => p.type === t),
-  );
+  const byCategory = products.some((p) => p.category);
+  const groupOf = (p: Product) => (byCategory ? p.category || "Other" : p.type);
+  const groups = byCategory
+    ? [...new Set(products.map(groupOf))].sort((a, b) =>
+        a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b),
+      )
+    : Object.keys(TYPE_LABEL).filter((t) => products.some((p) => p.type === t));
   const ro = !editable;
 
   return (
@@ -346,11 +352,11 @@ export function SalesEditor({
             {groups.map((g) => (
               <div key={g}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  {TYPE_LABEL[g]}
+                  {byCategory ? g : TYPE_LABEL[g]}
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {products
-                    .filter((p) => p.type === g)
+                    .filter((p) => groupOf(p) === g)
                     .map((p) => {
                       const q = st.manualLines[p.id] ?? "";
                       return (

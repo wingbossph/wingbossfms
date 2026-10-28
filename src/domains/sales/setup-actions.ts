@@ -65,6 +65,22 @@ export async function saveProductAction(raw: unknown): Promise<ActionState> {
   });
 }
 
+/** Loyverse back office → Items → Export: creates/updates menu items with category and prices. */
+export async function importLoyverseItemsAction(raw: unknown): Promise<ActionState> {
+  return handleAction(async () => {
+    const actor = await owner();
+    const { csv } = z.object({ csv: z.string().min(1).max(5_000_000) }).parse(raw);
+    const { importLoyverseItems } = await import("./loyverse/items");
+    const r = await db.$transaction((tx) => importLoyverseItems(tx, csv, actor.id), { timeout: 120_000 });
+    revalidatePath("/admin/menu");
+    revalidatePath("/sales");
+    return {
+      ok: true,
+      message: `Items: ${r.created} added, ${r.updated} updated.${r.stores.length ? ` Branch prices for ${r.stores.join(", ")}.` : ""}${r.unmatchedStores.length ? ` No branch matches ${r.unmatchedStores.join(", ")}: only default prices were used for it.` : ""}`,
+    };
+  });
+}
+
 const pricesSchema = z.object({
   priceListId: z.string().min(1),
   prices: z.array(z.object({ productId: z.string().min(1), price: pesoField })),

@@ -10,7 +10,7 @@ export const metadata = { title: "Menu & prices" };
 export default async function MenuPage() {
   await requirePagePermission("settings:manage");
   const [products, priceLists, revenueAccounts, locations] = await Promise.all([
-    db.product.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { revenueAccount: true } }),
+    db.product.findMany({ orderBy: [{ category: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }, { name: "asc" }], include: { revenueAccount: true } }),
     db.priceList.findMany({ include: { items: true, location: true }, orderBy: [{ effectiveFrom: "desc" }] }),
     db.account.findMany({ where: { group: { section: "REVENUE" }, isPostable: true, isIntercompany: false, isActive: true }, orderBy: { code: "asc" } }),
     db.location.findMany({ where: { isActive: true, type: "BRANCH" }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
@@ -33,6 +33,7 @@ export default async function MenuPage() {
         products={products.map((p) => ({
           id: p.id,
           name: p.name,
+          category: p.category ?? "",
           type: p.type,
           paxPerUnit: p.paxPerUnit.toString(),
           revenueAccountId: p.revenueAccountId,
