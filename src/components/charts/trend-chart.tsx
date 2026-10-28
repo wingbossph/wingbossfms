@@ -1,6 +1,6 @@
 "use client";
 
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export type TrendSeries = { key: string; label: string };
 
@@ -12,9 +12,10 @@ const shortDate = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString("
  * One measure over time, one line per location (colors follow the location's
  * fixed slot, never its rank). Pesos and pax get separate charts: no dual axis.
  */
-export function TrendChart({ data, series, format, height = 240, ariaLabel }: { data: Record<string, string | number>[]; series: TrendSeries[]; format: "peso" | "number"; height?: number; ariaLabel: string }) {
+export function TrendChart({ data, series, format, height = 240, ariaLabel, curve = "monotone" }: { data: Record<string, string | number>[]; series: TrendSeries[]; format: "peso" | "number"; height?: number; ariaLabel: string; curve?: "monotone" | "linear" }) {
   const fmt = (v: number) => (format === "peso" ? `₱${v.toLocaleString("en-PH", { maximumFractionDigits: 0 })}` : v.toLocaleString("en-PH", { maximumFractionDigits: 1 }));
   const axis = (v: number) => (format === "peso" ? (Math.abs(v) >= 1000 ? `₱${Math.round(v / 1000)}k` : `₱${v}`) : String(v));
+  const negative = data.some((row) => series.some((s) => Number(row[s.key]) < 0));
   return (
     <div role="img" aria-label={ariaLabel} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -28,9 +29,10 @@ export function TrendChart({ data, series, format, height = 240, ariaLabel }: { 
             labelFormatter={(d) => shortDate(String(d))}
             formatter={(v, name) => [fmt(Number(v)), name]}
           />
+          {negative && <ReferenceLine y={0} stroke="var(--muted-foreground)" />}
           {series.length > 1 && <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: "var(--foreground)" }} />}
           {series.map((s, i) => (
-            <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={SERIES_VARS[i % SERIES_VARS.length]} strokeWidth={2} dot={data.length <= 14 ? { r: 4, strokeWidth: 2, stroke: "var(--background)" } : false} activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--background)" }} connectNulls />
+            <Line key={s.key} type={curve} dataKey={s.key} name={s.label} stroke={SERIES_VARS[i % SERIES_VARS.length]} strokeWidth={2} dot={data.length <= 14 ? { r: 4, strokeWidth: 2, stroke: "var(--background)" } : false} activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--background)" }} connectNulls />
           ))}
         </LineChart>
       </ResponsiveContainer>

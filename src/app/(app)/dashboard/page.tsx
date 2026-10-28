@@ -3,11 +3,12 @@ import { AlertTriangle, ArrowDownRight, ArrowUpRight, CircleAlert, Info } from "
 import { PageHeader } from "@/components/shell/page-header";
 import { SimpleTable } from "@/components/data-table/simple-table";
 import { BarList } from "@/components/charts/bar-list";
+import { DonutChart } from "@/components/charts/donut-chart";
 import { TrendChart } from "@/components/charts/trend-chart";
 import { requirePagePermission } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { loadChart } from "@/domains/reports/financials";
-import { alerts, branchComparison, comparisonRange, expensesByGroup, inventoryPanel, kpis, moneyIn, presetRange, salesTrend, type Kpis } from "@/domains/dashboard/metrics";
+import { alerts, branchComparison, comparisonRange, dailyPnl, expensesByGroup, inventoryPanel, kpis, moneyIn, presetRange, salesTrend, type Kpis } from "@/domains/dashboard/metrics";
 import { datesBetween } from "@/domains/payroll/compute";
 import { manilaDateString } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
@@ -59,7 +60,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const q = (extra: Record<string, string> = {}) => `?${new URLSearchParams({ from: range.from, to: range.to, ...(location !== "all" ? { location } : {}), ...extra })}`;
 
   const chart = await loadChart(db);
-  const [now, before, money, trend, exp, branches, inv, alertList] = await Promise.all([
+  const [now, before, money, trend, exp, branches, inv, alertList, pnlDays] = await Promise.all([
     kpis(ids, range, chart),
     kpis(ids, prev, chart),
     moneyIn(ids, range),
@@ -68,6 +69,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     branchComparison(ids, range, chart),
     inventoryPanel(ids, range),
     alerts(ids, range, today),
+    dailyPnl(ids, range, chart),
   ]);
   for (const v of inv.variances.slice(0, 3)) alertList.push({ severity: "warning", text: `${v.location}: ${v.item} usage ${v.variancePct! > 0 ? "+" : ""}${v.variancePct}% vs standard (${v.date})`, href: `/inventory/variance` });
   if (money.personalAlert) alertList.unshift({ severity: "serious", text: `Personal GCash is ${(money.personalShareBp / 100).toFixed(1)}% of money in (limit ${(money.personalThresholdBp / 100).toFixed(0)}%)`, href: `/reports/sales-by-channel${q()}` });
@@ -82,6 +84,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const days = datesBetween(range.from, range.to);
   const salesData = days.map((d) => Object.fromEntries([["date", d], ...trendLocs.map((l) => [l.id, Number(trend.find((t) => t.date === d && t.locationId === l.id)?.netCents ?? 0n) / 100])]));
   const paxData = days.map((d) => Object.fromEntries([["date", d], ...trendLocs.map((l) => [l.id, trend.find((t) => t.date === d && t.locationId === l.id)?.pax ?? 0])]));
+  const peso = (c: bigint | undefined) => Number(c ?? 0n) / 100;
+  const pnlData = days.map((d) => ({ date: d, sales: peso(pnlDays.get(d)?.netSales), expenses: peso(pnlDays.get(d)?.expenses), profit: peso(pnlDays.get(d)?.netProfit) }));
+  const pnlSeries = [
+    { key: "sales", label: "Net sales" },
+    { key: "expenses", label: "Expenses" },
+    { key: "profit", label: "Net profit" },
+  ];
+  // Five biggest expense groups, the rest folded into "Other".
+  const positive = exp.groups.filter((g) => g.cents > 0n);
+  const slices = [...positive.slice(0, 5).map((g) => ({ label: g.name, value: peso(g.cents) })), ...(positive.length > 5 ? [{ label: "Other", value: peso(positive.slice(5).reduce((a, g) => a + g.cents, 0n)) }] : [])];
   const series = trendLocs.map((l) => ({ key: l.id, label: l.name }));
   const icon = { critical: CircleAlert, serious: AlertTriangle, warning: Info };
 
@@ -116,6 +128,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <span className="text-xs text-muted-foreground">as of {range.to}</span>
         </Card>
       </section>
+
+      <div className="mt-8 grid gap-8 lg:grid-cols-5">
+        <section aria-labelledby="pnl-trend" className="rounded-lg border bg-card p-4 lg:col-span-3">
+          <h2 id="pnl-trend" className="text-2xl">
+            Revenue, expenses & profit
+          </h2>
+          <p className="mb-3 text-sm text-muted-foreground">Per day for the selected period, from the ledger</p>
+          {pnlDays.size === 0 ? <p className="text-sm text-muted-foreground">Nothing posted in this period yet.</p> : <TrendChart data={pnlData} series={pnlSeries} format="peso" height={280} curve="linear" ariaLabel="Net sales, expenses and net profit per day" />}
+        </section>
+        <section aria-labelledby="exp-breakdown" className="rounded-lg border bg-card p-4 lg:col-span-2">
+          <h2 id="exp-breakdown" className="text-2xl">
+            <Link href={`/reports/expenses-by-category${q()}`} className="hover:underline">
+              Expense breakdown
+            </Link>
+          </h2>
+          <p className="mb-3 text-sm text-muted-foreground">Costs posted in the selected period</p>
+          {slices.length === 0 ? <p className="text-sm text-muted-foreground">No expenses in this period.</p> : <DonutChart slices={slices} ariaLabel="Expense breakdown by category" />}
+        </section>
+      </div>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-2">
         <section aria-labelledby="money-in">
