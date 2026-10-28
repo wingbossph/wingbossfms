@@ -3,11 +3,13 @@ import { writeAudit } from "@/server/audit";
 import { UserFacingError } from "@/lib/errors";
 import { toDbDate } from "@/lib/dates";
 import { getSetting, setSetting } from "@/domains/admin/settings";
-import { openDraft, refreshTotals } from "../service";
-import { isSplitPayment, type ParseResult, type ParsedReceipt } from "./parse";
+import { CONSOLIDATED_PRODUCT, consolidatedProductId, openDraft, refreshTotals, reopenReport, submitReport } from "../service";
+import { isDailySummary, isSplitPayment, type ParseResult, type ParsedReceipt } from "./parse";
 
 export const LOYVERSE_DISCOUNT_NOTE = "Loyverse import";
 const REFUND_PREFIX = "Loyverse refund #";
+/** Payment type given to daily-summary sales (the export has no payment split); mapped once to a channel. */
+export const SUMMARY_PAYMENT_TYPE = "Sales summary";
 
 type Mappings = {
   product(itemName: string, variant: string | null): { productId: string; paxPerUnit: number } | null;
@@ -53,6 +55,8 @@ export async function loadMappings(tx: Tx, locationId: string): Promise<Mappings
 
 export type ImportPreview = {
   kind: ParseResult["kind"];
+  /** Sales summary with one row per day: imported as one consolidated total per day. */
+  daily?: boolean;
   dates: string[];
   receiptCount: number;
   newCount: number;
@@ -101,6 +105,27 @@ export async function previewImport(tx: Tx, locationId: string, parsed: ParseRes
   const unmappedItems = new Set<string>();
   const unmappedPay = new Set<string>();
   let split = 0;
+
+  if (isDailySummary(parsed)) {
+    const rows = parsed.summary;
+    const dates = rows.map((r) => r.date!).sort();
+    const reports = await tx.salesReport.findMany({ where: { locationId, shiftNo: 1, businessDate: { in: dates.map(toDbDate) } }, select: { status: true } });
+    return {
+      kind: parsed.kind,
+      daily: true,
+      dates,
+      receiptCount: 0,
+      newCount: rows.length - reports.length,
+      duplicateCount: reports.length,
+      unmappedItems: [],
+      unmappedPaymentTypes: maps.channel(SUMMARY_PAYMENT_TYPE) ? [] : [SUMMARY_PAYMENT_TYPE],
+      splitPaymentReceipts: 0,
+      grossCents: rows.reduce((a, s) => a + s.grossCents, 0n),
+      netCents: rows.reduce((a, s) => a + s.netCents, 0n),
+      storeWarning: null,
+      errors: parsed.errors,
+    };
+  }
 
   if (parsed.summary.length) {
     if (!summaryDate) throw new UserFacingError("Summary exports have no dates per row: choose the business date they cover.");
@@ -163,7 +188,8 @@ export async function commitImport(
   if (preview.unmappedItems.length || preview.unmappedPaymentTypes.length) {
     throw new UserFacingError("Map every Loyverse item and payment type before importing.");
   }
-  if (parsed.kind === "SALES_SUMMARY") throw new UserFacingError("A Sales summary export is only used as a check. Import Receipts by item instead.");
+  if (isDailySummary(parsed)) return commitDailySummary(tx, { locationId, parsed, fileName: args.fileName, actorId });
+  if (parsed.kind === "SALES_SUMMARY") throw new UserFacingError("A Sales summary export without dates is only used as a check. Export it by day, or import Receipts by item instead.");
 
   const imp = await tx.loyverseImport.create({
     data: {
@@ -252,6 +278,82 @@ export async function commitImport(
   return { importId: imp.id, created, enriched, duplicates: receipts.length - created - enriched, rebuilt };
 }
 
+/**
+ * Sales summary exported by day: one consolidated total per day. Each day's
+ * report (shift 1) is created or updated and submitted, so re-importing a
+ * newer export keeps the figures current. Days with real Loyverse receipts,
+ * or already closed with a cash count, are left alone.
+ */
+async function commitDailySummary(tx: Tx, args: { locationId: string; parsed: ParseResult; fileName: string; actorId: string }) {
+  const { locationId, parsed, actorId } = args;
+  const imp = await tx.loyverseImport.create({
+    data: { locationId, kind: "SALES_SUMMARY", fileName: args.fileName, importedById: actorId, rowCount: parsed.summary.length, errors: parsed.errors.length ? parsed.errors : undefined },
+  });
+  await consolidatedProductId(tx);
+  const today = new Date().toISOString().slice(0, 10);
+  const rebuilt: { date: string; reportId: string; skipped?: string }[] = [];
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  for (const row of [...parsed.summary].sort((a, b) => a.date!.localeCompare(b.date!))) {
+    const date = row.date!;
+    const refund = row.refundCents ?? 0n;
+    const discount = row.discountCents ?? 0n;
+    const real = await tx.loyverseReceipt.count({ where: { locationId, businessDate: toDbDate(date), NOT: { receiptNumber: { startsWith: "DAY-" } } } });
+    const existing = await tx.salesReport.findUnique({ where: { locationId_businessDate_shiftNo: { locationId, businessDate: toDbDate(date), shiftNo: 1 } }, include: { cashCount: true } });
+    if (real) {
+      rebuilt.push({ date, reportId: existing?.id ?? "", skipped: "has Loyverse receipts imported" });
+      continue;
+    }
+    if (existing?.status === "POSTED") {
+      if (existing.grossCents === row.grossCents && existing.netCents === row.netCents) {
+        unchanged++;
+        rebuilt.push({ date, reportId: existing.id, skipped: "unchanged" });
+        continue;
+      }
+      if (existing.cashCount) {
+        rebuilt.push({ date, reportId: existing.id, skipped: "shift already closed with a cash count; reopen it to update" });
+        continue;
+      }
+      await reopenReport(tx, existing.id, actorId, `Updated from Loyverse sales summary (${args.fileName})`, today);
+    }
+
+    const at = new Date(`${date}T12:00:00+08:00`);
+    await tx.loyverseReceipt.deleteMany({ where: { locationId, receiptNumber: { in: [`DAY-${date}-SUMMARY`, `DAY-${date}-SUMMARY-REFUNDS`] } } });
+    const base = { receiptAt: at, businessDate: date, paymentType: SUMMARY_PAYMENT_TYPE, store: null, cashierName: null, posDevice: null };
+    await saveReceipt(tx, locationId, imp.id, {
+      ...base,
+      receiptNumber: `DAY-${date}-SUMMARY`,
+      isRefund: false,
+      grossCents: row.grossCents,
+      discountCents: discount,
+      netCents: row.grossCents - discount,
+      lines: [{ itemName: CONSOLIDATED_PRODUCT, variantName: null, qty: "1", grossCents: row.grossCents, discountCents: discount }],
+    });
+    if (refund > 0n) {
+      await saveReceipt(tx, locationId, imp.id, { ...base, receiptNumber: `DAY-${date}-SUMMARY-REFUNDS`, isRefund: true, grossCents: refund, discountCents: 0n, netCents: refund, lines: [] });
+    }
+    const r = await rebuildFromLoyverse(tx, locationId, date, actorId);
+    if (!r.skipped) {
+      const report = await tx.salesReport.findUniqueOrThrow({ where: { id: r.reportId }, include: { _count: { select: { lines: true } } } });
+      if (report._count.lines > 0) await submitReport(tx, r.reportId, actorId);
+      if (existing) updated++;
+      else created++;
+    }
+    rebuilt.push(r);
+  }
+  await tx.loyverseImport.update({ where: { id: imp.id }, data: { newCount: created, duplicateCount: unchanged } });
+  await writeAudit(tx, {
+    actorId,
+    action: "IMPORT",
+    entityType: "LoyverseImport",
+    entityId: imp.id,
+    locationId,
+    after: { kind: "SALES_SUMMARY_DAILY", file: args.fileName, created, updated, unchanged, dates: rebuilt.map((r) => r.date) },
+  });
+  return { importId: imp.id, created, enriched: updated, duplicates: unchanged, rebuilt, daily: true as const };
+}
+
 async function saveReceipt(tx: Tx, locationId: string, importId: string, r: ParsedReceipt, payments?: { name: string; amountCents: string }[]) {
   await tx.loyverseReceipt.create({
     data: {
@@ -335,7 +437,7 @@ export async function rebuildFromLoyverse(tx: Tx, locationId: string, ymd: strin
   await tx.salesDiscount.deleteMany({ where: { reportId: report.id, notes: LOYVERSE_DISCOUNT_NOTE } });
   if (discount > 0n) {
     const code = await getSetting(tx, "loyverse.defaultDiscountCode", locationId);
-    const dt = await tx.discountType.findUnique({ where: { code } });
+    const dt = (await tx.discountType.findUnique({ where: { code } })) ?? (await tx.discountType.findFirst({ where: { isActive: true, requiresIdentity: false }, orderBy: { name: "asc" } }));
     if (dt) await tx.salesDiscount.create({ data: { reportId: report.id, discountTypeId: dt.id, amountCents: discount, notes: LOYVERSE_DISCOUNT_NOTE } });
   }
   await tx.salesVoid.deleteMany({ where: { reportId: report.id, reason: { startsWith: REFUND_PREFIX } } });

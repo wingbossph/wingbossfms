@@ -29,6 +29,17 @@ export async function priceMap(tx: Tx, locationId: string, ymd: string): Promise
   return prices;
 }
 
+/** Menu item that carries a day's sales entered (or imported) as one total instead of by item. */
+export const CONSOLIDATED_PRODUCT = "Consolidated sales";
+
+export async function consolidatedProductId(tx: Tx): Promise<string> {
+  const found = await tx.product.findFirst({ where: { name: CONSOLIDATED_PRODUCT }, select: { id: true } });
+  if (found) return found.id;
+  const revenue = await tx.account.findFirstOrThrow({ where: { systemKey: "REV_UNLIMITED" }, select: { id: true } });
+  const p = await tx.product.create({ data: { name: CONSOLIDATED_PRODUCT, type: "OTHER", paxPerUnit: 0, revenueAccountId: revenue.id, sortOrder: 9999 } });
+  return p.id;
+}
+
 export async function openDraft(tx: Tx, args: { locationId: string; ymd: string; shiftNo: number; userId: string }) {
   const existing = await tx.salesReport.findUnique({
     where: { locationId_businessDate_shiftNo: { locationId: args.locationId, businessDate: toDbDate(args.ymd), shiftNo: args.shiftNo } },
@@ -104,7 +115,23 @@ export async function saveDraft(tx: Tx, input: SalesDraftInput, actorId: string)
   for (const v of input.voids) if (v.amount <= 0n) throw new UserFacingError("Void/refund amounts must be more than zero.");
 
   await tx.salesLine.deleteMany({ where: { reportId: report.id, source: "MANUAL" } });
-  for (const l of input.lines) {
+  if (input.consolidated) {
+    if (input.consolidated.gross < 0n) throw new UserFacingError("Gross sales can't be negative.");
+    if (input.consolidated.gross > 0n) {
+      await tx.salesLine.create({
+        data: {
+          reportId: report.id,
+          productId: await consolidatedProductId(tx),
+          qty: "1",
+          pax: input.consolidated.pax,
+          unitPriceCents: input.consolidated.gross,
+          grossCents: input.consolidated.gross,
+          source: "MANUAL",
+        },
+      });
+    }
+  }
+  for (const l of input.consolidated ? [] : input.lines) {
     const product = productById.get(l.productId);
     if (!product) throw new UserFacingError("Unknown menu item.");
     if (Number(l.qty) === 0) continue;

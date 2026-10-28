@@ -155,11 +155,19 @@ export async function commitImportAction(raw: unknown): Promise<ActionState & { 
     if ("error" in parsed) throw new UserFacingError(parsed.error);
     const result = await db.$transaction(
       (tx) => commitImport(tx, { locationId: input.locationId, parsed, fileName: input.fileName, summaryDate: input.summaryDate, actorId: actor.id }),
-      { timeout: 60_000 },
+      { timeout: 180_000 },
     );
-    reportIds = result.rebuilt.map((r) => r.reportId);
+    reportIds = result.rebuilt.filter((r) => r.reportId && !r.skipped).map((r) => r.reportId);
     const skipped = result.rebuilt.filter((r) => r.skipped).length;
     revalidatePath("/sales");
+    revalidatePath("/dashboard");
+    if ("daily" in result) {
+      const notes = result.rebuilt.filter((r) => r.skipped && r.skipped !== "unchanged").map((r) => `${r.date}: ${r.skipped}`);
+      return {
+        ok: true,
+        message: `Sales summary: ${result.created} day(s) added, ${result.enriched} updated, ${result.duplicates} unchanged. Added and updated days are submitted.${notes.length ? ` Skipped ${notes.join("; ")}.` : ""}`,
+      };
+    }
     return {
       ok: true,
       message: `Imported ${result.created} new receipts${result.enriched ? `, updated ${result.enriched}` : ""}${result.duplicates ? `, skipped ${result.duplicates} already imported` : ""}.${skipped ? ` ${skipped} day(s) were already submitted.` : ""}`,

@@ -29,7 +29,16 @@ export type ParsedReceipt = {
   payments?: { name: string; amountCents: string }[];
 };
 
-export type ParsedSummaryRow = { name: string; qty?: string; grossCents: bigint; discountCents?: bigint; refundCents?: bigint; netCents: bigint };
+export type ParsedSummaryRow = {
+  name: string;
+  qty?: string;
+  grossCents: bigint;
+  discountCents?: bigint;
+  refundCents?: bigint;
+  netCents: bigint;
+  /** Sales summary exported by day: the row's business date (YYYY-MM-DD). */
+  date?: string;
+};
 
 export type ParseResult = {
   kind: LoyverseKind;
@@ -159,11 +168,22 @@ export function parseLoyverseCsv(text: string, opts: { dateOrder?: "MDY" | "DMY"
         discountCents: disc,
         refundCents: refund < 0n ? -refund : refund,
         netCents: net,
+        date: kind === "SALES_SUMMARY" ? summaryDate(name, opts.dateOrder) : undefined,
       });
     });
   }
   out.stores = [...stores];
   return out;
+}
+
+function summaryDate(raw: string, order?: "MDY" | "DMY"): string | undefined {
+  const d = parseLocalDateTime(raw, order);
+  return d ? manilaDateString(d) : undefined;
+}
+
+/** A Sales summary exported with one row per day (Date column holds dates). */
+export function isDailySummary(p: ParseResult): boolean {
+  return p.kind === "SALES_SUMMARY" && p.summary.length > 0 && p.summary.every((s) => s.date);
 }
 
 /** Split payments ("Cash, GCash") can't be allocated from the Receipts export alone. */
