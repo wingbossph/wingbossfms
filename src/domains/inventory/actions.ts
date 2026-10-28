@@ -332,3 +332,63 @@ export async function settleIntercoAction(raw: unknown): Promise<ActionState> {
     return { ok: true, message: "Settlement recorded." };
   });
 }
+
+// ── Inventory sheet import (monthly workbook, one tab per month) ───────────
+
+const sheetFileSchema = z.object({ base64: z.string().min(1).max(16_000_000), tab: z.string().max(100).optional().default("") });
+
+/** Reads the workbook: the tab names, and the chosen tab's items and days. */
+export async function readInventorySheetAction(raw: unknown) {
+  const actor = await requireActor();
+  assertCanAnywhere(actor, "inventory:items:manage");
+  const input = sheetFileSchema.parse(raw);
+  try {
+    const { readWorkbookTabs, parseInventoryTab } = await import("./sheet-parse");
+    const wb = await readWorkbookTabs(Buffer.from(input.base64, "base64"));
+    const tabs = wb.worksheets.map((w) => w.name);
+    const ws = input.tab ? wb.getWorksheet(input.tab) : undefined;
+    return { ok: true as const, tabs, sheet: ws ? parseInventoryTab(ws) : null };
+  } catch (e) {
+    return { ok: false as const, message: e instanceof UserFacingError ? e.message : "Couldn't read this workbook.", tabs: [] as string[], sheet: null };
+  }
+}
+
+const prepareSchema = z.object({ locationId: z.string().min(1), items: z.array(z.object({ name: z.string().min(1).max(120), section: z.string().max(60) })).max(1000) });
+
+export async function prepareInventorySheetAction(raw: unknown): Promise<ActionState & { itemIds?: Record<string, string>; created?: number }> {
+  let extra: { itemIds?: Record<string, string>; created?: number } = {};
+  const res = await handleAction(async () => {
+    const actor = await requireActor();
+    const input = prepareSchema.parse(raw);
+    assertCan(actor, "inventory:items:manage", input.locationId);
+    const { prepareSheetItems } = await import("./sheet-import");
+    extra = await db.$transaction((tx) => prepareSheetItems(tx, input.locationId, input.items), { timeout: 120_000 });
+    return { ok: true, message: `${extra.created} new item(s).` };
+  });
+  return { ...(res ?? { ok: false }), ...extra };
+}
+
+const n = z.number().nullable();
+const sheetDaySchema = z.object({
+  locationId: z.string().min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  fileName: z.string().max(200),
+  lines: z.array(z.object({ itemId: z.string().min(1), start: n, in: n, out: n, transfer: n, end: n })).max(1000),
+});
+
+export async function applyInventorySheetDayAction(raw: unknown): Promise<ActionState & { skipped?: boolean }> {
+  let skipped = false;
+  const res = await handleAction(async () => {
+    const actor = await requireActor();
+    const input = sheetDaySchema.parse(raw);
+    assertCan(actor, "inventory:count", input.locationId);
+    assertCan(actor, "inventory:adjust", input.locationId);
+    if (input.date > manilaDateString()) throw new UserFacingError(`${input.date} is in the future.`);
+    const { applySheetDay } = await import("./sheet-import");
+    const r = await db.$transaction((tx) => applySheetDay(tx, input, actor), { timeout: 120_000 });
+    skipped = r.skipped;
+    return { ok: true, message: r.skipped ? `${input.date} already counted: skipped.` : `${input.date} imported.` };
+  });
+  if (!skipped) revalidatePath("/inventory");
+  return { ...(res ?? { ok: false }), skipped };
+}
