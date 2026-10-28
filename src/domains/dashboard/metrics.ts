@@ -145,6 +145,25 @@ export async function salesTrend(ids: string[], r: Range) {
   return rows.map((x) => ({ date: x.businessDate.toISOString().slice(0, 10), locationId: x.locationId, netCents: x._sum.netCents ?? 0n, pax: Number(x._sum.pax ?? 0) }));
 }
 
+/** Net sales, total expenses and net profit per day, from the ledger (same basis as the P&L). */
+export async function dailyPnl(ids: string[], r: Range, chart?: ChartAccount[]) {
+  const c = chart ?? (await loadChart(db));
+  const rows = await db.journalLine.groupBy({ by: ["date", "accountId"], where: { locationId: { in: ids }, date: { gte: toDbDate(r.from), lte: toDbDate(r.to) } }, _sum: { debitCents: true, creditCents: true } });
+  const byDay = new Map<string, Map<string, bigint>>();
+  for (const x of rows) {
+    const d = x.date.toISOString().slice(0, 10);
+    const m = byDay.get(d) ?? new Map<string, bigint>();
+    m.set(x.accountId, (x._sum.debitCents ?? 0n) - (x._sum.creditCents ?? 0n));
+    byDay.set(d, m);
+  }
+  return new Map(
+    [...byDay].map(([d, balances]) => {
+      const f = pnlFigures(c, { key: d, label: d, balances, consolidated: ids.length > 1 });
+      return [d, { netSales: f.netSales, expenses: f.cogs + f.labor + f.opex + f.depreciation, netProfit: f.netProfit }];
+    }),
+  );
+}
+
 export async function expensesByGroup(ids: string[], r: Range, chart?: ChartAccount[]) {
   const c = chart ?? (await loadChart(db));
   const bal = combine([...(await loadBalances(db, { from: r.from, to: r.to, locationIds: ids })).values()]);
