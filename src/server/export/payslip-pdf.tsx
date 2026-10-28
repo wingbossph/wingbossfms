@@ -1,4 +1,5 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { pdfLogo } from "./logo";
 import { formatPeso } from "@/lib/money";
 
 export type PayslipDoc = {
@@ -19,6 +20,7 @@ export type PayslipDoc = {
 const s = StyleSheet.create({
   page: { padding: 28, fontSize: 9, fontFamily: "Helvetica" },
   brand: { fontSize: 10, letterSpacing: 2, fontFamily: "Helvetica-Bold" },
+  logo: { width: 54, height: 36, marginBottom: 2 },
   title: { fontSize: 14, fontFamily: "Helvetica-Bold", marginTop: 2 },
   muted: { color: "#555" },
   box: { borderWidth: 1, borderColor: "#000", padding: 8, marginTop: 10 },
@@ -60,6 +62,8 @@ export function PayslipsPdf({ slips }: { slips: PayslipDoc[] }) {
     <Document title="Payslips">
       {slips.map((p, i) => (
         <Page key={i} size="A5" orientation="landscape" style={s.page}>
+          {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf images have no alt */}
+          {pdfLogo() && <Image style={s.logo} src={pdfLogo()!} />}
           <Text style={s.brand}>{p.business.toUpperCase()}</Text>
           <Text style={s.title}>Payslip · {p.period}</Text>
           <Text style={s.muted}>Pay date {p.payDate}</Text>

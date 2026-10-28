@@ -31,6 +31,8 @@ export default async function ShiftSlip({ params }: { params: Promise<{ id: stri
   return (
     <div className="thermal mx-auto w-[72mm] bg-white p-2 font-mono text-[11px] leading-tight text-black">
       <PrintOnLoad />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo-dark.png" alt="" className="mx-auto mb-1 h-14 w-auto" />
       <p className="text-center text-base font-bold">WINGBOSS</p>
       <p className="text-center">{r.location.name}</p>
       <p className="text-center">SHIFT CLOSE · {formatBusinessDate(r.businessDate)}{r.shiftNo > 1 ? ` · S${r.shiftNo}` : ""}</p>

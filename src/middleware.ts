@@ -5,5 +5,5 @@ export const { auth: middleware } = NextAuth(authConfig);
 
 export const config = {
   // Everything except Next internals and static files.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.svg|icons/|.*\\.(?:png|jpg|svg|ico|webp)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|.*\\.(?:png|jpg|svg|ico|webp)$).*)"],
 };

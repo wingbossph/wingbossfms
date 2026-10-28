@@ -11,7 +11,6 @@ export const metadata: Metadata = {
   description: "Wingboss restaurant management and financial system",
   applicationName: "Wingboss FMS",
   appleWebApp: { capable: true, title: "Wingboss", statusBarStyle: "black" },
-  icons: { icon: "/logo.svg", apple: "/logo.svg" },
 };
 
 export const viewport: Viewport = {

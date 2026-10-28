@@ -68,7 +68,8 @@ export function ReportView({ doc, exportBase }: { doc: ReportDoc; exportBase?: s
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <p className="hidden font-display text-lg tracking-widest print:block">WINGBOSS</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-dark.png" alt="Wing Boss" className="mb-2 hidden h-14 w-auto print:block" />
           <h2 className="text-2xl">{doc.title}</h2>
           {doc.subtitle && <p className="text-sm text-muted-foreground">{doc.subtitle}</p>}
         </div>

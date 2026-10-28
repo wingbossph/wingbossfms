@@ -101,7 +101,7 @@ export function SidebarNav({ sections, onNavigate }: { sections: NavSection[]; o
 export function Brand() {
   return (
     <Link href="/" className="flex items-center gap-3 px-6 py-5">
-      <img src="/logo.svg" alt="" className="size-9" />
+      <img src="/logo.png" alt="" className="h-12 w-auto" />
       <span className="font-display text-2xl tracking-wider text-white">WINGBOSS</span>
     </Link>
   );
