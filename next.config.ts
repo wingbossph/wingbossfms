@@ -7,8 +7,8 @@ const nextConfig: NextConfig = {
   },
   // exceljs / react-pdf are server-only and large; keep them out of the bundle.
   serverExternalPackages: ["exceljs", "@react-pdf/renderer"],
-  // The PDF exports draw the logo from disk.
-  outputFileTracingIncludes: { "/**": ["./public/logo-dark.png"] },
+  // PDF exports read the logo and pdfkit's built-in fonts from disk at runtime.
+  outputFileTracingIncludes: { "/**": ["./public/logo-dark.png", "./node_modules/pdfkit/js/standard-fonts/**", "./node_modules/pdfkit/js/data/**"] },
   poweredByHeader: false,
   async headers() {
     return [
