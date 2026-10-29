@@ -70,7 +70,7 @@ describe("Loyverse import", () => {
     const parsed = parse("loyverse-sales-summary-daily.csv");
     const preview = await tx((t) => previewImport(t, f.matina.id, parsed));
     expect(preview.daily).toBe(true);
-    expect(preview.dates).toEqual(["2026-09-01", "2026-09-02", "2026-09-03"]);
+    expect(preview.dates).toEqual(["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"]);
     expect(preview.unmappedPaymentTypes).toEqual([SUMMARY_PAYMENT_TYPE]);
     await db.loyverseMapping.create({ data: { kind: "PAYMENT_TYPE", locationId: f.matina.id, externalName: SUMMARY_PAYMENT_TYPE, channelId: f.channel("Cash").id } });
 

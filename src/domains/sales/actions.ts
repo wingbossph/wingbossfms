@@ -162,7 +162,7 @@ export async function commitImportAction(raw: unknown): Promise<ActionState & { 
     revalidatePath("/sales");
     revalidatePath("/dashboard");
     if ("daily" in result) {
-      const notes = result.rebuilt.filter((r) => r.skipped && r.skipped !== "unchanged").map((r) => `${r.date}: ${r.skipped}`);
+      const notes = result.rebuilt.filter((r) => r.skipped && r.skipped !== "unchanged" && r.skipped !== "no sales").map((r) => `${r.date}: ${r.skipped}`);
       return {
         ok: true,
         message: `Sales summary: ${result.created} day(s) added, ${result.enriched} updated, ${result.duplicates} unchanged. Added and updated days are submitted.${notes.length ? ` Skipped ${notes.join("; ")}.` : ""}`,

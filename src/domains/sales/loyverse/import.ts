@@ -299,6 +299,10 @@ async function commitDailySummary(tx: Tx, args: { locationId: string; parsed: Pa
     const date = row.date!;
     const refund = row.refundCents ?? 0n;
     const discount = row.discountCents ?? 0n;
+    if (row.grossCents === 0n && refund === 0n && discount === 0n) {
+      rebuilt.push({ date, reportId: "", skipped: "no sales" });
+      continue;
+    }
     const real = await tx.loyverseReceipt.count({ where: { locationId, businessDate: toDbDate(date), NOT: { receiptNumber: { startsWith: "DAY-" } } } });
     const existing = await tx.salesReport.findUnique({ where: { locationId_businessDate_shiftNo: { locationId, businessDate: toDbDate(date), shiftNo: 1 } }, include: { cashCount: true } });
     if (real) {
