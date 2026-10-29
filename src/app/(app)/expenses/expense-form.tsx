@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, selectClass } from "@/components/forms/field";
+import { CategoryPicker } from "@/components/forms/category-picker";
 import { useAction } from "@/components/forms/use-action";
 import { useDraft } from "@/components/forms/use-draft";
 import { PhotoInput, type UploadedFile } from "@/components/forms/photo-input";
@@ -220,18 +221,7 @@ export function ExpenseForm({
               </div>
               <div className="grid gap-2 sm:grid-cols-[1fr_9rem]">
                 {l.kind === "category" ? (
-                  <select className={`${selectClass} h-12`} value={l.accountId} onChange={(e) => setLine(i, { accountId: e.target.value })} aria-label="Category">
-                    <option value="">Choose category…</option>
-                    {data.categories.map((g) => (
-                      <optgroup key={g.groupId} label={g.group}>
-                        {g.accounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                  <CategoryPicker className="h-12" value={l.accountId} onChange={(id) => setLine(i, { accountId: id })} groups={data.categories} />
                 ) : (
                   <div className="grid grid-cols-[1fr_5rem_6rem] gap-2">
                     <select className={`${selectClass} h-12`} value={l.itemId} onChange={(e) => setLine(i, { itemId: e.target.value, unit: "BASE" })} aria-label="Item">

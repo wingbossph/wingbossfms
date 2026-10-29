@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { selectClass } from "@/components/forms/field";
+import { CategoryPicker } from "@/components/forms/category-picker";
 import { addShiftExpenseAction, removeShiftExpenseAction } from "@/domains/expenses/actions";
 import { formatPeso } from "@/lib/money";
 
@@ -91,18 +92,7 @@ export function ShiftExpenses({
       {canAdd && (
         <div className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_8rem] lg:grid-cols-[1.3fr_1fr_1fr_8rem_auto]">
           <Input placeholder="What was it for?" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} aria-label="Expense description" />
-          <select className={selectClass} value={form.accountId} onChange={(e) => setForm({ ...form, accountId: e.target.value })} aria-label="Expense category">
-            <option value="">Category…</option>
-            {categories.map((g) => (
-              <optgroup key={g.group} label={g.group}>
-                {g.accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <CategoryPicker value={form.accountId} onChange={(id) => setForm({ ...form, accountId: id })} groups={categories} placeholder="Category…" ariaLabel="Expense category" />
           <select className={selectClass} value={form.paidFromMoneyAccountId} onChange={(e) => setForm({ ...form, paidFromMoneyAccountId: e.target.value })} aria-label="Paid from">
             {moneyAccounts.map((m) => (
               <option key={m.id} value={m.id}>
