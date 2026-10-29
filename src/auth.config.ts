@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import { NextResponse } from "next/server";
 
 // Edge-safe part of the Auth.js config (no Prisma). Used by middleware.
 // Providers live in src/auth.ts.
@@ -47,7 +48,17 @@ export const authConfig = {
     authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
       if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return true;
-      if (auth?.user) return true;
+      if (auth?.user) {
+        // The top-bar location (wb_loc cookie) is every page's default location
+        // filter: a page opened without ?location= sees it as if it were in the URL.
+        const loc = request.cookies.get("wb_loc")?.value;
+        if (request.method === "GET" && loc && !pathname.startsWith("/api/") && !request.nextUrl.searchParams.has("location")) {
+          const url = request.nextUrl.clone();
+          url.searchParams.set("location", loc);
+          return NextResponse.rewrite(url);
+        }
+        return true;
+      }
       // Branch devices go to the PIN pad; everyone else to the email login.
       const target = request.cookies.has("wb_device") ? "/pin" : "/login";
       const url = new URL(target, request.nextUrl);
