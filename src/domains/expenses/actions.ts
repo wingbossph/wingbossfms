@@ -192,3 +192,63 @@ export async function savePettyFundAction(raw: unknown): Promise<ActionState> {
     return { ok: true, message: "Petty cash fund saved." };
   });
 }
+
+// ── Expenses entered on the sales screen (paid during the shift) ───────────
+
+const shiftExpenseSchema = z.object({
+  reportId: z.string().min(1),
+  accountId: z.string().min(1, "Choose a category"),
+  description: z.string().trim().min(2, "What was it for?").max(200),
+  amount: pesoField,
+  paidFromMoneyAccountId: z.string().min(1, "Where was it paid from?"),
+  receiptNo: z.string().trim().max(60).optional().default(""),
+});
+
+/** Records an expense for the sales report's day and links it to the shift (same rules as the Expenses page). */
+export async function addShiftExpenseAction(raw: unknown): Promise<ActionState> {
+  return handleAction(async () => {
+    const user = await requireActor();
+    const input = shiftExpenseSchema.parse(raw);
+    if (input.amount <= 0n) throw new UserFacingError("Amount must be more than zero.");
+    const report = await db.salesReport.findUnique({ where: { id: input.reportId }, include: { cashCount: true } });
+    if (!report) throw new UserFacingError("Sales report not found.");
+    assertCan(user, "expenses:create", report.locationId);
+    if (report.cashCount) throw new UserFacingError("This shift is already closed. Record the expense on the Expenses page.");
+    const status = await db.$transaction(async (tx) => {
+      const saved = await saveExpense(
+        tx,
+        expenseSchema.parse({
+          locationId: report.locationId,
+          date: report.businessDate.toISOString().slice(0, 10),
+          terms: "PAID_NOW",
+          paidFromMoneyAccountId: input.paidFromMoneyAccountId,
+          receiptNo: input.receiptNo,
+          lines: [{ accountId: input.accountId, description: input.description, amount: (Number(input.amount) / 100).toFixed(2) }],
+        }),
+        actorOf(user),
+      );
+      await tx.expense.update({ where: { id: saved.id }, data: { salesReportId: report.id } });
+      return submitExpense(tx, saved.id, actorOf(user));
+    });
+    revalidatePath(`/sales/${report.id}`);
+    revalidatePath("/expenses");
+    return { ok: true, message: status === "POSTED" ? "Expense added." : "Expense added; it needs approval before it's posted." };
+  });
+}
+
+/** Removes (voids) an expense added on the sales screen, before the shift is closed. */
+export async function removeShiftExpenseAction(expenseId: string): Promise<ActionState> {
+  return handleAction(async () => {
+    const { user, e } = await forExpense(expenseId);
+    const report = e.salesReportId ? await db.salesReport.findUnique({ where: { id: e.salesReportId }, include: { cashCount: true } }) : null;
+    if (!report) throw new UserFacingError("This expense isn't linked to a sales report. Void it on the Expenses page.");
+    if (report.cashCount) throw new UserFacingError("The shift is already closed. Ask an admin to void it on the Expenses page.");
+    if (!(e.submittedById === user.id && user.access.can("expenses:create", e.locationId)) && !user.access.can("records:void", e.locationId)) {
+      throw new UserFacingError("Only the person who entered it, or an admin, can remove it.");
+    }
+    await db.$transaction((tx) => voidExpense(tx, e.id, user.id, "Removed on the sales screen", manilaDateString()));
+    revalidatePath(`/sales/${report.id}`);
+    revalidatePath("/expenses");
+    return { ok: true, message: "Expense removed." };
+  });
+}

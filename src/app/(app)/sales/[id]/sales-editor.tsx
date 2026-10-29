@@ -79,6 +79,9 @@ type Props = {
   products: Product[];
   discountTypes: DiscountType[];
   channels: Channel[];
+  /** The day's expenses section (rendered after payments) and their total. */
+  expensesSlot?: React.ReactNode;
+  expensesCents?: string;
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -99,6 +102,8 @@ export function SalesEditor({
   products,
   discountTypes,
   channels,
+  expensesSlot,
+  expensesCents = "0",
 }: Props) {
   const router = useRouter();
   const initial: State = {
@@ -707,6 +712,8 @@ export function SalesEditor({
         </div>
       </section>
 
+      {expensesSlot}
+
       <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 px-4 py-3 backdrop-blur md:left-64 md:px-8">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm tabular-nums">
           <span>
@@ -728,6 +735,17 @@ export function SalesEditor({
           <span className="text-base">
             Net <b>{formatPeso(totals.netCents)}</b>
           </span>
+          {BigInt(expensesCents) > 0n && (
+            <>
+              <span>
+                Expenses <b>−{formatPeso(BigInt(expensesCents))}</b>
+              </span>
+              <span className="text-base">
+                Net after expenses{" "}
+                <b>{formatPeso(totals.netCents - BigInt(expensesCents))}</b>
+              </span>
+            </>
+          )}
           <span>
             Paid <b>{formatPeso(totals.paymentsCents)}</b>
           </span>

@@ -8,6 +8,8 @@ import { formatBusinessDate } from "@/lib/dates";
 import { CONSOLIDATED_PRODUCT, drawerActivity, priceMap } from "@/domains/sales/service";
 import { loyverseCheck, LOYVERSE_DISCOUNT_NOTE } from "@/domains/sales/loyverse/import";
 import { SalesEditor } from "./sales-editor";
+import { ShiftExpenses } from "./shift-expenses";
+import { expenseCategories } from "@/domains/expenses/queries";
 import { ShiftClose } from "./shift-close";
 import { ReportActions } from "./report-actions";
 import { formatPeso } from "@/lib/money";
@@ -35,6 +37,18 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
   if (!can("sales:view") && !can("sales:create")) redirect("/forbidden");
 
   const ymd = report.businessDate.toISOString().slice(0, 10);
+  const canExpense = can("expenses:create");
+  const [dayExpenses, categories, moneyAccounts] = await Promise.all([
+    db.expense.findMany({
+      where: { locationId: report.locationId, date: report.businessDate, status: { in: ["SUBMITTED", "POSTED"] }, OR: [{ salesReportId: report.id }, { salesReportId: null }] },
+      include: { lines: { include: { account: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    canExpense ? expenseCategories({ costsOnly: true }) : Promise.resolve([]),
+    db.moneyAccount.findMany({ where: { isActive: true, locationId: report.locationId, kind: { in: ["CASH_DRAWER", "PETTY_CASH", "EWALLET", "BANK"] } }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
+  ]);
+  const moneyName = new Map(moneyAccounts.map((m) => [m.id, m.name]));
+  const expensesCents = dayExpenses.reduce((a, e) => a + e.totalCents, 0n);
   const [products, prices, discountTypes, channels, activity, check, pendingRequest, cashier] = await Promise.all([
     db.product.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     priceMap(db, report.locationId, ymd),
@@ -108,6 +122,28 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
         products={products.filter((p) => p.name !== CONSOLIDATED_PRODUCT).map((p) => ({ id: p.id, name: p.name, type: p.type, category: p.category ?? undefined, priceCents: s(prices.get(p.id) ?? 0n), paxPerUnit: p.paxPerUnit.toString() }))}
         discountTypes={discountTypes.map((d) => ({ id: d.id, name: d.name, rateBp: d.defaultRateBp, requiresIdentity: d.requiresIdentity }))}
         channels={channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
+        expensesCents={s(expensesCents)}
+        expensesSlot={
+          dayExpenses.length > 0 || canExpense ? (
+            <ShiftExpenses
+              reportId={report.id}
+              canAdd={canExpense && !report.cashCount}
+              expenses={dayExpenses.map((e) => ({
+                id: e.id,
+                number: e.number,
+                description: e.lines.map((l) => l.description).filter(Boolean).join(", ") || `Expense #${e.number}`,
+                category: [...new Set(e.lines.map((l) => l.account.name))].join(", "),
+                paidFrom: e.terms === "ON_ACCOUNT" ? "On account" : (moneyName.get(e.paidFromMoneyAccountId ?? "") ?? "Other account"),
+                amountCents: s(e.totalCents),
+                status: e.status,
+                removable: e.salesReportId === report.id && !report.cashCount && ((e.submittedById === user.id && canExpense) || can("records:void")),
+              }))}
+              categories={categories.map((g) => ({ group: g.group, accounts: g.accounts.map((a) => ({ id: a.id, name: a.name })) }))}
+              moneyAccounts={moneyAccounts.map((m) => ({ id: m.id, name: m.name }))}
+              defaultMoneyAccountId={moneyAccounts.find((m) => m.kind === "CASH_DRAWER")?.id ?? moneyAccounts[0]?.id ?? ""}
+            />
+          ) : null
+        }
       />
 
       {report.status === "POSTED" && (
