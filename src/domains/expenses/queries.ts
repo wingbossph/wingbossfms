@@ -18,9 +18,12 @@ export function expenseWhere(locationIds: string[], f: ExpenseFilters): Prisma.E
 }
 
 /** Accounts a user may book an expense to, grouped for a select. */
-export async function expenseCategories() {
+export async function expenseCategories(opts: { costsOnly?: boolean } = {}) {
+  const sections = opts.costsOnly
+    ? (["COGS", "OPERATING_EXPENSE"] as const)
+    : (["COGS", "LABOR", "OPERATING_EXPENSE", "OTHER_INCOME_EXPENSE", "INCOME_TAX", "NONCURRENT_ASSET", "CURRENT_ASSET"] as const);
   const groups = await db.accountGroup.findMany({
-    where: { section: { in: ["COGS", "LABOR", "OPERATING_EXPENSE", "OTHER_INCOME_EXPENSE", "INCOME_TAX", "NONCURRENT_ASSET", "CURRENT_ASSET"] } },
+    where: { section: { in: [...sections] } },
     include: {
       accounts: {
         where: {
