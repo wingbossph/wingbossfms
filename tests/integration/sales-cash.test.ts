@@ -73,16 +73,22 @@ describe("sales → shift close → deposit (Lanang cashier flow)", () => {
     ).rejects.toThrow(/name and ID/);
   });
 
+  // Other test files may post Lanang revenue too: compare against the balance before this report.
+  let revBefore = 0n;
+  let scBefore = 0n;
+
   it("posts a balanced entry and creates expected Maya/Grab settlements on submit", async () => {
+    revBefore = await glBalance((await systemAccount("REV_UNLIMITED")).id, f.lanang.id);
+    scBefore = await glBalance((await systemAccount("DISC_SC_PWD")).id, f.lanang.id);
     await tx((t) => submitReport(t, reportId, f.cashierLanang.id));
     const report = await db.salesReport.findUniqueOrThrow({ where: { id: reportId }, include: { payments: { include: { settlement: true, channel: true } } } });
     expect(report.status).toBe("POSTED");
     expect(await trialBalanceDifference()).toBe(0n);
 
     const rev = await systemAccount("REV_UNLIMITED");
-    expect(await glBalance(rev.id, f.lanang.id)).toBe(-499000n);
+    expect((await glBalance(rev.id, f.lanang.id)) - revBefore).toBe(-499000n);
     const sc = await systemAccount("DISC_SC_PWD");
-    expect(await glBalance(sc.id, f.lanang.id)).toBe(9980n);
+    expect((await glBalance(sc.id, f.lanang.id)) - scBefore).toBe(9980n);
 
     const maya = report.payments.find((p) => p.channel.name === "Maya Card")!;
     expect(maya.settlement?.expectedFeeCents).toBe(2500n); // 2.5% of ₱1,000
@@ -138,7 +144,7 @@ describe("sales → shift close → deposit (Lanang cashier flow)", () => {
     expect(report.cashCount).toBeNull();
     expect(await db.channelSettlement.count({ where: { salesPayment: { reportId } } })).toBe(0);
     const rev = await systemAccount("REV_UNLIMITED");
-    expect(await glBalance(rev.id, f.lanang.id)).toBe(0n);
+    expect(await glBalance(rev.id, f.lanang.id)).toBe(revBefore);
     expect(await trialBalanceDifference()).toBe(0n);
   });
 });
