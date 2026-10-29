@@ -37,7 +37,9 @@ test("Lanang cashier submits a petty-cash expense with a receipt photo", async (
   await page.selectOption("#efrom", { label: "Petty cash" });
   await page.fill("#esup", "Gaisano Mall");
   await page.fill("#eor", "OR-88812");
-  await page.getByLabel("Category").selectOption({ label: "Kitchen tools and smallwares" });
+  await page.getByRole("button", { name: "Category" }).click();
+  await page.getByLabel("Search category").fill("kitchen tools");
+  await page.getByLabel("Search category").press("Enter");
   await page.getByLabel("Amount", { exact: true }).fill("6,250.00");
   await page.locator('input[type="file"]').setInputFiles("tests/fixtures/receipt.png");
   await expect(page.getByRole("img", { name: "receipt.png" })).toBeVisible();
