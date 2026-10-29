@@ -10,10 +10,12 @@ import { EmployeeForm } from "./employee-form";
 
 export const metadata = { title: "Employees" };
 
-export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ new?: string; show?: string }> }) {
+export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ new?: string; show?: string; location?: string }> }) {
   const user = await requirePagePermission("employees:view");
   const sp = await searchParams;
-  const ids = locationsWithAny(user, "employees:view");
+  const allIds = locationsWithAny(user, "employees:view");
+  // Top-bar location: staff whose current home location is that branch.
+  const ids = sp.location && allIds.includes(sp.location) ? [sp.location] : allIds;
   const employees = await db.employee.findMany({
     where: { assignments: { some: { locationId: { in: ids } } }, ...(sp.show === "all" ? {} : { status: { in: ["ACTIVE", "ON_LEAVE"] } }) },
     include: { assignments: { include: { location: true }, orderBy: { effectiveFrom: "desc" }, take: 1 }, compensations: { orderBy: { effectiveFrom: "desc" }, take: 1 } },

@@ -103,7 +103,12 @@ function LocationSwitcher({
         onChange={(e) =>
           startTransition(async () => {
             await setActiveLocation(e.target.value);
-            router.refresh();
+            // A location chosen on the page itself would override the new choice: drop it.
+            const url = new URL(window.location.href);
+            if (url.searchParams.has("location")) {
+              url.searchParams.delete("location");
+              router.replace(`${url.pathname}${url.search}`);
+            } else router.refresh();
           })
         }
         className="h-9 max-w-[60vw] rounded-md border border-sidebar-border bg-black px-2 font-semibold uppercase tracking-wider text-white"
