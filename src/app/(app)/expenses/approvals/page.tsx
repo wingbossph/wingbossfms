@@ -36,6 +36,7 @@ export default async function ApprovalsPage() {
           terms: e.terms === "PAID_NOW" ? "Paid" : "Bill",
           status: EXPENSE_STATUS_LABEL[e.status],
           receipt: e.receiptNo ? `OR ${e.receiptNo}` : "",
+          approvable: true,
         }))}
       />
     </>
