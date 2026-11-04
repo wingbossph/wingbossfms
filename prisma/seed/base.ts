@@ -8,6 +8,7 @@ import type { Tx } from "@/server/db";
 import { DEFAULT_ROLES, PERMISSIONS } from "@/server/auth/permissions";
 import { ACCOUNTS, ACCOUNT_GROUPS, accountTypeForGroup } from "@/domains/ledger/coa-template";
 import { createMoneyAccount } from "@/domains/cash/money-accounts";
+import { applyExpenseCategories } from "@/domains/ledger/expense-categories";
 import { createLocation } from "@/domains/admin/locations";
 import { ensureStatementFormats } from "@/domains/banking/setup";
 import { ensurePayrollSetup } from "@/domains/payroll/setup";
@@ -81,6 +82,7 @@ export async function seedBase(db: PrismaClient, opts: { ownerEmail: string; own
     async (tx) => {
       const roles = await seedPermissionsAndRoles(tx);
       await seedChartOfAccounts(tx);
+      await applyExpenseCategories(tx);
 
       // Settings use code defaults (src/domains/admin/settings.ts) until the Owner changes them.
 

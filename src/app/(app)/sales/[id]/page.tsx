@@ -64,7 +64,7 @@ export default async function SalesReportPage({
       include: { lines: { include: { account: true } } },
       orderBy: { createdAt: "asc" },
     }),
-    canExpense ? expenseCategories({ costsOnly: true }) : Promise.resolve([]),
+    canExpense ? expenseCategories() : Promise.resolve([]),
     db.moneyAccount.findMany({
       select: { id: true, name: true, kind: true, locationId: true },
     }),

@@ -10,6 +10,7 @@ import { runtimeDatabaseUrl } from "@/lib/db-url";
 import { DEMO_PASSWORD, seedBase } from "./base";
 import { seedDemo } from "./demo";
 import { ensureExpenseSources } from "@/domains/expenses/sources";
+import { applyExpenseCategories } from "@/domains/ledger/expense-categories";
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: runtimeDatabaseUrl() }) });
 
@@ -18,7 +19,10 @@ async function main() {
     // Already seeded: only add what newer versions expect (idempotent). The build
     // server can be far from the database, so allow a slow transaction.
     const created = await db.$transaction((tx) => ensureExpenseSources(tx), { timeout: 300_000, maxWait: 60_000 });
-    console.log(`Database already seeded${created ? `; added ${created} expense source account(s)` : ""}. Use \`npm run db:reset\` to start over.`);
+    const categories = await db.$transaction((tx) => applyExpenseCategories(tx), { timeout: 300_000, maxWait: 60_000 });
+    console.log(
+      `Database already seeded${created ? `; added ${created} expense source account(s)` : ""}${categories ? `; updated ${categories} expense heading(s)/categories` : ""}. Use \`npm run db:reset\` to start over.`,
+    );
     return;
   }
   const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "owner@wingboss.ph";

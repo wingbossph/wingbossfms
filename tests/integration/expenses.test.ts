@@ -131,11 +131,26 @@ describe("expenses & payables", () => {
 });
 
 describe("expense categories", () => {
-  it("include accounts without a system key (rent, electricity)", async () => {
+  it("are the owner's nine headings with their categories, in order", async () => {
     const { expenseCategories } = await import("@/domains/expenses/queries");
-    const names = (await expenseCategories()).flatMap((g) => g.accounts.map((a) => a.name));
-    expect(names).toEqual(expect.arrayContaining(["Rental", "Electricity", "Cleaning supplies"]));
-    expect(names).not.toContain("Accumulated depreciation");
+    const groups = await expenseCategories();
+    expect(groups.map((g) => g.group)).toEqual([
+      "Cost of goods sold (COGS)",
+      "Supplies and packaging",
+      "Operating expenses",
+      "Maintenance and equipment",
+      "Marketing and promotions",
+      "Labor cost",
+      "Admin and fixed costs",
+      "Training and engagement",
+      "Others / Miscellaneous",
+    ]);
+    expect(groups[0].accounts.map((a) => a.name).slice(0, 4)).toEqual(["Chicken Wings", "Ice", "Rice", "Oil"]);
+    const names = groups.flatMap((g) => g.accounts.map((a) => a.name));
+    expect(names).toEqual(expect.arrayContaining(["Commercial Space Rental", "Utility - Davao Light", "Personal"]));
+    // Accounts the system posts to by itself aren't offered.
+    expect(names).not.toContain("Cash over / short");
+    expect(names).not.toContain("Overtime");
     expect(names).not.toContain("Cash drawers");
   });
 });

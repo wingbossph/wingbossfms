@@ -144,7 +144,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </Link>
           </h2>
           <p className="mb-3 text-sm text-muted-foreground">Costs posted in the selected period</p>
-          {slices.length === 0 ? <p className="text-sm text-muted-foreground">No expenses in this period.</p> : <DonutChart slices={slices} ariaLabel="Expense breakdown by category" />}
+          {slices.length === 0 ? <p className="text-sm text-muted-foreground">No expenses in this period.</p> : <DonutChart slices={slices} other={positive.length > 5 ? positive.slice(5).map((g) => ({ label: g.name, value: peso(g.cents) })) : []} ariaLabel="Expense breakdown by category" />}
         </section>
       </div>
 

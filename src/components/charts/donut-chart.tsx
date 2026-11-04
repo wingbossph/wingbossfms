@@ -14,7 +14,7 @@ const compact = (v: number) => (Math.abs(v) >= 1_000_000 ? `₱${(v / 1_000_000)
  * Share of a whole, at most five named slices plus "Other" (gray). The legend
  * beside it carries every amount and share as text, so nothing depends on color.
  */
-export function DonutChart({ slices, ariaLabel, totalLabel = "Total" }: { slices: DonutSlice[]; ariaLabel: string; totalLabel?: string }) {
+export function DonutChart({ slices, ariaLabel, totalLabel = "Total", other = [] }: { slices: DonutSlice[]; ariaLabel: string; totalLabel?: string; other?: DonutSlice[] }) {
   const total = slices.reduce((a, s) => a + s.value, 0);
   const color = (s: DonutSlice, i: number) => (s.label === "Other" ? OTHER : SLICE_VARS[i % SLICE_VARS.length]);
   return (
@@ -47,6 +47,15 @@ export function DonutChart({ slices, ariaLabel, totalLabel = "Total" }: { slices
             </span>
             <span className="shrink-0 tabular-nums">
               <strong>{peso(s.value)}</strong> <span className="text-muted-foreground">{total > 0 ? `${((s.value / total) * 100).toFixed(1)}%` : ""}</span>
+            </span>
+          </li>
+        ))}
+        {/* What the gray "Other" slice is made of, each with its own share. */}
+        {other.map((s) => (
+          <li key={`other-${s.label}`} className="flex items-baseline justify-between gap-3 pl-5 text-muted-foreground">
+            <span className="truncate">{s.label}</span>
+            <span className="shrink-0 tabular-nums">
+              {peso(s.value)} {total > 0 ? `${((s.value / total) * 100).toFixed(1)}%` : ""}
             </span>
           </li>
         ))}
