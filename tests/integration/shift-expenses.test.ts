@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drawerActivity, openDraft } from "@/domains/sales/service";
-import { saveExpense, submitExpense } from "@/domains/expenses/service";
+import { saveExpense, submitExpense, voidExpense } from "@/domains/expenses/service";
 import { expenseSchema } from "@/domains/expenses/schemas";
 import { ensureExpenseSources, resolveExpenseSource } from "@/domains/expenses/sources";
-import { db, fixtures, tx } from "./helpers";
+import { db, fixtures, glBalance, trialBalanceDifference, tx } from "./helpers";
 
 let f: Awaited<ReturnType<typeof fixtures>>;
 beforeAll(async () => {
@@ -58,5 +58,43 @@ describe("expenses entered on the sales screen", () => {
     });
     expect((await db.expense.findUniqueOrThrow({ where: { id } })).salesReportId).toBe(report.id);
     expect((await tx((t) => drawerActivity(t, report.id))).cashExpensesCents).toBe(0n);
+  });
+
+  it("splits one expense across sources: each line credits its own account, only the drawer part hits the shift", async () => {
+    const report = await tx((t) => openDraft(t, { locationId: f.matina.id, ymd: "2026-09-22", shiftNo: 1, userId: f.owner.id }));
+    const drawer = f.locMoney(f.matina.id, "CASH_DRAWER");
+    const gcash = f.money("GCash 1");
+    const cat = await db.account.findFirstOrThrow({ where: { group: { section: "OPERATING_EXPENSE" }, isPostable: true } });
+    const actor = { id: f.owner.id, can: () => true };
+    const [drawerBefore, gcashBefore] = [await glBalance(drawer.glAccountId, f.matina.id), await glBalance(gcash.glAccountId, f.matina.id)];
+    const id = await tx(async (t) => {
+      const saved = await saveExpense(
+        t,
+        expenseSchema.parse({
+          locationId: f.matina.id,
+          date: "2026-09-22",
+          terms: "PAID_NOW",
+          lines: [
+            { accountId: cat.id, description: "Ice", amount: "200", paidFromMoneyAccountId: drawer.id },
+            { accountId: cat.id, description: "Gas", amount: "800", paidFromMoneyAccountId: gcash.id },
+          ],
+        }),
+        actor,
+      );
+      await submitExpense(t, saved.id, actor);
+      return saved.id;
+    });
+    const e = await db.expense.findUniqueOrThrow({ where: { id }, include: { payments: true } });
+    expect(e.status).toBe("POSTED");
+    expect(e.paidFromMoneyAccountId).toBe(drawer.id);
+    expect(e.payments.map((p) => [p.moneyAccountId, p.amountCents]).sort()).toEqual([[drawer.id, 20000n], [gcash.id, 80000n]].sort());
+    expect((await glBalance(drawer.glAccountId, f.matina.id)) - drawerBefore).toBe(-20000n);
+    expect((await glBalance(gcash.glAccountId, f.matina.id)) - gcashBefore).toBe(-80000n);
+    expect(e.salesReportId).toBe(report.id);
+    expect((await tx((t) => drawerActivity(t, report.id))).cashExpensesCents).toBe(20000n);
+
+    await tx((t) => voidExpense(t, id, f.owner.id, "test", "2026-09-22"));
+    expect((await glBalance(gcash.glAccountId, f.matina.id)) - gcashBefore).toBe(0n);
+    expect(await trialBalanceDifference()).toBe(0n);
   });
 });

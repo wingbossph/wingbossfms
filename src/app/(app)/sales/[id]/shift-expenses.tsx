@@ -23,6 +23,8 @@ type Expense = {
   category: string;
   paidFrom: string;
   deducted: boolean;
+  /** Part paid from the cash drawer (the rest is not deducted). */
+  drawerCents: string;
   amountCents: string;
   status: string;
   removable: boolean;
@@ -54,12 +56,8 @@ export function ShiftExpenses({
     receiptNo: "",
   };
   const [form, setForm] = useState(blank);
-  const drawer = expenses
-    .filter((e) => e.deducted)
-    .reduce((a, e) => a + BigInt(e.amountCents), 0n);
-  const other = expenses
-    .filter((e) => !e.deducted)
-    .reduce((a, e) => a + BigInt(e.amountCents), 0n);
+  const drawer = expenses.reduce((a, e) => a + BigInt(e.drawerCents), 0n);
+  const other = expenses.reduce((a, e) => a + BigInt(e.amountCents) - BigInt(e.drawerCents), 0n);
 
   function add() {
     start(async () => {

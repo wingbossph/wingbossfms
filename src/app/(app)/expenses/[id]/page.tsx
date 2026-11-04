@@ -26,7 +26,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     include: {
       location: true,
       supplier: true,
-      lines: { include: { account: true, item: true } },
+      lines: { include: { account: true, item: true, paidFrom: true } },
       payments: { include: { moneyAccount: true }, orderBy: { date: "asc" } },
     },
   });
@@ -76,6 +76,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
               unit: l.item && l.unit === l.item.purchaseUnit && l.unit !== l.item.baseUnit ? ("PURCHASE" as const) : ("BASE" as const),
               description: l.description ?? "",
               amount: formatPeso(l.amountCents, { symbol: false }),
+              paidFromMoneyAccountId: l.paidFromMoneyAccountId ?? e.paidFromMoneyAccountId ?? "",
             })),
           }}
         />
@@ -120,7 +121,11 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             <dt className="text-muted-foreground">Supplier</dt>
             <dd>{e.supplier?.name ?? "—"}</dd>
             <dt className="text-muted-foreground">Payment</dt>
-            <dd>{e.terms === "PAID_NOW" ? `Paid from ${paidFrom?.name ?? "—"}` : `Bill due ${e.dueDate ? formatBusinessDate(e.dueDate) : "—"}`}</dd>
+            <dd>
+              {e.terms === "PAID_NOW"
+                ? `Paid from ${[...new Set(e.lines.map((l) => l.paidFrom?.name ?? paidFrom?.name ?? "—"))].join(", ")}`
+                : `Bill due ${e.dueDate ? formatBusinessDate(e.dueDate) : "—"}`}
+            </dd>
             <dt className="text-muted-foreground">Receipt no.</dt>
             <dd>{e.receiptNo ?? "—"}</dd>
             <dt className="text-muted-foreground">Entered by</dt>
@@ -132,7 +137,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             <dd>{e.approvedById ? `${name(e.approvedById)} · ${formatDateTime(e.approvedAt!)}` : "—"}</dd>
           </dl>
           <SimpleTable
-            head={["Category / item", "Qty", "Amount"]}
+            head={e.terms === "PAID_NOW" ? ["Category / item", "Qty", "Paid from", "Amount"] : ["Category / item", "Qty", "Amount"]}
             rows={[
               ...e.lines.map((l) => [
                 <span key="a">
@@ -140,9 +145,10 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
                   {l.description && l.description !== l.item?.name && <span className="block text-xs text-muted-foreground">{l.description}</span>}
                 </span>,
                 l.qty ? `${Number(l.qty)} ${l.unit ?? ""}` : "",
+                ...(e.terms === "PAID_NOW" ? [l.paidFrom?.name ?? paidFrom?.name ?? "—"] : []),
                 <span key="m" className="tabular-nums">{formatPeso(l.amountCents)}</span>,
               ]),
-              [<b key="t">Total</b>, "", <b key="v" className="tabular-nums">{formatPeso(e.totalCents)}</b>],
+              [<b key="t">Total</b>, "", ...(e.terms === "PAID_NOW" ? [""] : []), <b key="v" className="tabular-nums">{formatPeso(e.totalCents)}</b>],
             ]}
           />
           {e.notes && <p className="whitespace-pre-line text-sm">{e.notes}</p>}

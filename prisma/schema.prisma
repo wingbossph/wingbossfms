@@ -672,6 +672,7 @@ model MoneyAccount {
   createdAt                DateTime         @default(now())
 
   paymentChannels   PaymentChannel[]
+  expenseLinesPaid  ExpenseLine[]            @relation("ExpenseLinePaidFrom")
   transfersOut      MoneyTransfer[]          @relation("MoneyFrom")
   transfersIn       MoneyTransfer[]          @relation("MoneyTo")
   expensePayments   ExpensePayment[]
@@ -1163,18 +1164,21 @@ model Expense {
 }
 
 model ExpenseLine {
-  id          String   @id @default(cuid())
-  expenseId   String
-  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-  accountId   String
-  account     Account  @relation(fields: [accountId], references: [id])
-  description String?
+  id                     String        @id @default(cuid())
+  expenseId              String
+  expense                Expense       @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  accountId              String
+  account                Account       @relation(fields: [accountId], references: [id])
+  description            String?
   /// Inventory purchase: qty in purchase unit, converted on receipt.
-  itemId      String?
-  item        Item?    @relation(fields: [itemId], references: [id])
-  qty         Decimal? @db.Decimal(18, 4)
-  unit        String?
-  amountCents BigInt
+  itemId                 String?
+  item                   Item?         @relation(fields: [itemId], references: [id])
+  qty                    Decimal?      @db.Decimal(18, 4)
+  unit                   String?
+  amountCents            BigInt
+  /// Paid now: where this line's money came from (lines of one receipt can differ).
+  paidFromMoneyAccountId String?
+  paidFrom               MoneyAccount? @relation("ExpenseLinePaidFrom", fields: [paidFromMoneyAccountId], references: [id])
 }
 
 model ExpensePayment {
