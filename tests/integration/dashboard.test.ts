@@ -68,6 +68,10 @@ describe("dashboard (acceptance #4: money in by channel)", () => {
     expect(presetRange("month", "2026-10-28")).toEqual({ from: "2026-10-01", to: "2026-10-28" });
     expect(comparisonRange({ from: "2026-10-01", to: "2026-10-10" }, "prev")).toEqual({ from: "2026-09-21", to: "2026-09-30" });
     expect(comparisonRange({ from: "2024-02-29", to: "2024-02-29" }, "yoy")).toEqual({ from: "2023-02-28", to: "2023-02-28" });
+    // Whole months and years compare with the whole previous one.
+    expect(comparisonRange({ from: "2026-03-01", to: "2026-03-31" }, "prev")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(comparisonRange({ from: "2026-01-01", to: "2026-01-31" }, "prev")).toEqual({ from: "2025-12-01", to: "2025-12-31" });
+    expect(comparisonRange({ from: "2025-01-01", to: "2025-12-31" }, "prev")).toEqual({ from: "2024-01-01", to: "2024-12-31" });
   });
 
   it("emails go to the local outbox when no Resend key is set", async () => {
