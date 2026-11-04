@@ -15,7 +15,7 @@ import { saveExpenseAction } from "@/domains/expenses/actions";
 import type { ExpenseFormData } from "@/domains/expenses/form-data";
 import { formatPeso, parsePeso } from "@/lib/money";
 
-type Line = { kind: "category" | "item"; accountId: string; itemId: string; qty: string; unit: "BASE" | "PURCHASE"; description: string; amount: string };
+type Line = { kind: "category" | "item"; accountId: string; itemId: string; qty: string; unit: "BASE" | "PURCHASE"; description: string; amount: string; paidFromMoneyAccountId?: string };
 
 export type ExpenseFormValues = {
   id?: string;
@@ -39,7 +39,7 @@ const MONEY_LABEL: Record<string, string> = {
   OWNER_PERSONAL: "Owner's own money",
 };
 
-const emptyLine = (): Line => ({ kind: "category", accountId: "", itemId: "", qty: "", unit: "BASE", description: "", amount: "" });
+const emptyLine = (paidFrom = ""): Line => ({ kind: "category", accountId: "", itemId: "", qty: "", unit: "BASE", description: "", amount: "", paidFromMoneyAccountId: paidFrom });
 
 export function ExpenseForm({
   data,
@@ -93,7 +93,8 @@ export function ExpenseForm({
       supplierId: v.supplierId,
       newSupplierName: v.newSupplierName,
       terms: v.terms,
-      paidFromMoneyAccountId: v.terms === "PAID_NOW" ? v.paidFromMoneyAccountId : "",
+      // Paid now: each line carries its own source (lines saved before this keep the expense's).
+      paidFromMoneyAccountId: "",
       dueDate: v.terms === "ON_ACCOUNT" ? v.dueDate : "",
       receiptNo: v.receiptNo,
       notes: v.notes,
@@ -104,6 +105,7 @@ export function ExpenseForm({
         unit: l.unit,
         description: l.description,
         amount: l.amount || "0",
+        paidFromMoneyAccountId: v.terms === "PAID_NOW" ? l.paidFromMoneyAccountId || v.paidFromMoneyAccountId : "",
       })),
       attachmentIds: files.map((f) => f.id),
       submit: submitNow,
@@ -133,7 +135,7 @@ export function ExpenseForm({
       <div className="grid gap-4 sm:grid-cols-2">
         {data.locations.length > 1 && (
           <Field id="eloc" label="Location">
-            <select id="eloc" className={`${selectClass} h-12`} value={v.locationId} disabled={!!v.id} onChange={(e) => set({ locationId: e.target.value, paidFromMoneyAccountId: "" })}>
+            <select id="eloc" className={`${selectClass} h-12`} value={v.locationId} disabled={!!v.id} onChange={(e) => set({ locationId: e.target.value, paidFromMoneyAccountId: "", lines: v.lines.map((l) => ({ ...l, paidFromMoneyAccountId: "" })) })}>
               {data.locations.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -152,17 +154,7 @@ export function ExpenseForm({
           </select>
         </Field>
         {v.terms === "PAID_NOW" ? (
-          <Field id="efrom" label="Paid from" error={err("paidFromMoneyAccountId")}>
-            <select id="efrom" className={`${selectClass} h-12`} value={v.paidFromMoneyAccountId} onChange={(e) => set({ paidFromMoneyAccountId: e.target.value })}>
-              <option value="">Choose…</option>
-              {moneyOptions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.locationId ? MONEY_LABEL[m.kind] : m.name}
-                  {m.kind === "OWNER_PERSONAL" ? " (owner advance)" : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <p className="self-end pb-3 text-sm text-muted-foreground">Choose where each line was paid from below.</p>
         ) : (
           <Field id="edue" label="Due date" hint="Blank = supplier's usual terms">
             <Input id="edue" type="date" value={v.dueDate} onChange={(e) => set({ dueDate: e.target.value })} className="h-12" />
@@ -241,12 +233,27 @@ export function ExpenseForm({
                 )}
                 <Input inputMode="decimal" placeholder="Amount ₱" value={l.amount} onChange={(e) => setLine(i, { amount: e.target.value })} className="h-12 text-right text-lg" aria-label="Amount" />
               </div>
-              <Input placeholder="Description (optional)" value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} aria-label="Description" />
+              <div className={v.terms === "PAID_NOW" ? "grid gap-2 sm:grid-cols-[1fr_15rem]" : ""}>
+                <Input placeholder="Description (optional)" value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} aria-label="Description" />
+                {v.terms === "PAID_NOW" && (
+                  <div>
+                    <select className={selectClass} value={l.paidFromMoneyAccountId || v.paidFromMoneyAccountId} onChange={(e) => setLine(i, { paidFromMoneyAccountId: e.target.value })} aria-label="Paid from">
+                      <option value="">Paid from…</option>
+                      {moneyOptions.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          Paid from {m.locationId ? MONEY_LABEL[m.kind] : m.name}
+                          {m.kind === "OWNER_PERSONAL" ? " (owner advance)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
         <div className="flex items-center justify-between">
-          <Button type="button" variant="outline" onClick={() => set({ lines: [...v.lines, emptyLine()] })}>
+          <Button type="button" variant="outline" onClick={() => set({ lines: [...v.lines, emptyLine(v.lines.at(-1)?.paidFromMoneyAccountId || v.paidFromMoneyAccountId)] })}>
             <Plus className="size-4" /> Add line
           </Button>
           <p className="text-lg">

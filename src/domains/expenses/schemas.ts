@@ -10,6 +10,8 @@ export const expenseLineSchema = z.object({
   unit: z.enum(["BASE", "PURCHASE"]).default("BASE"),
   description: z.string().trim().max(200).optional().default(""),
   amount: pesoField,
+  /** Paid now: this line's source. Blank = the expense's paidFromMoneyAccountId. */
+  paidFromMoneyAccountId: z.string().optional(),
 });
 
 export const expenseSchema = z
@@ -31,7 +33,11 @@ export const expenseSchema = z
     submit: z.boolean().default(false),
   })
   .superRefine((v, ctx) => {
-    if (v.terms === "PAID_NOW" && !v.paidFromMoneyAccountId) ctx.addIssue({ code: "custom", path: ["paidFromMoneyAccountId"], message: "Where was it paid from?" });
+    if (v.terms === "PAID_NOW") {
+      v.lines.forEach((l, i) => {
+        if (!l.paidFromMoneyAccountId && !v.paidFromMoneyAccountId) ctx.addIssue({ code: "custom", path: ["lines", i, "paidFromMoneyAccountId"], message: "Where was it paid from?" });
+      });
+    }
     if (v.terms === "ON_ACCOUNT" && !v.supplierId && !v.newSupplierName) ctx.addIssue({ code: "custom", path: ["supplierId"], message: "Bills need a supplier" });
     v.lines.forEach((l, i) => {
       if (!l.accountId && !l.itemId) ctx.addIssue({ code: "custom", path: ["lines", i, "accountId"], message: "Choose a category or an inventory item" });

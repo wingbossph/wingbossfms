@@ -78,11 +78,13 @@ export default async function SalesReportPage({
       )
       .map((m) => m.id),
   );
-  const fromDrawer = (e: (typeof dayExpenses)[number]) =>
-    e.terms === "PAID_NOW" && drawerIds.has(e.paidFromMoneyAccountId ?? "");
-  const expensesCents = dayExpenses
-    .filter(fromDrawer)
-    .reduce((a, e) => a + e.totalCents, 0n);
+  // Lines of one expense can come from different sources: only the drawer part counts.
+  const lineSource = (e: (typeof dayExpenses)[number], l: (typeof dayExpenses)[number]["lines"][number]) => l.paidFromMoneyAccountId ?? e.paidFromMoneyAccountId ?? "";
+  const drawerPart = (e: (typeof dayExpenses)[number]) =>
+    e.terms === "PAID_NOW" ? e.lines.filter((l) => drawerIds.has(lineSource(e, l))).reduce((a, l) => a + l.amountCents, 0n) : 0n;
+  const sourceNames = (e: (typeof dayExpenses)[number]) =>
+    [...new Set(e.lines.map((l) => (drawerIds.has(lineSource(e, l)) ? "Cash Drawer" : (moneyName.get(lineSource(e, l)) ?? "Other account"))))].join(" + ");
+  const expensesCents = dayExpenses.reduce((a, e) => a + drawerPart(e), 0n);
   const [
     products,
     prices,
@@ -278,14 +280,9 @@ export default async function SalesReportPage({
                 category: [...new Set(e.lines.map((l) => l.account.name))].join(
                   ", ",
                 ),
-                paidFrom:
-                  e.terms === "ON_ACCOUNT"
-                    ? "On account"
-                    : drawerIds.has(e.paidFromMoneyAccountId ?? "")
-                      ? "Cash Drawer"
-                      : (moneyName.get(e.paidFromMoneyAccountId ?? "") ??
-                        "Other account"),
-                deducted: fromDrawer(e),
+                paidFrom: e.terms === "ON_ACCOUNT" ? "On account" : sourceNames(e),
+                deducted: drawerPart(e) > 0n,
+                drawerCents: s(drawerPart(e)),
                 amountCents: s(e.totalCents),
                 status: e.status,
                 removable:

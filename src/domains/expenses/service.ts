@@ -25,10 +25,12 @@ async function resolveSupplier(tx: Tx, input: ExpenseInput, actorId: string) {
 
 async function validateRefs(tx: Tx, input: ExpenseInput) {
   if (input.terms === "PAID_NOW") {
-    const ma = await tx.moneyAccount.findUnique({ where: { id: input.paidFromMoneyAccountId } });
-    if (!ma || !ma.isActive) throw new UserFacingError("Choose where the money came from.");
-    if (ma.locationId && ma.locationId !== input.locationId) throw new UserFacingError(`${ma.name} belongs to another location.`);
-    if (["CARD_CLEARING", "PLATFORM_RECEIVABLE", "UNDEPOSITED_CASH"].includes(ma.kind)) throw new UserFacingError(`Expenses can't be paid from ${ma.name}.`);
+    for (const id of new Set(input.lines.map((l) => l.paidFromMoneyAccountId || input.paidFromMoneyAccountId))) {
+      const ma = id ? await tx.moneyAccount.findUnique({ where: { id } }) : null;
+      if (!ma || !ma.isActive) throw new UserFacingError("Choose where the money came from.");
+      if (ma.locationId && ma.locationId !== input.locationId) throw new UserFacingError(`${ma.name} belongs to another location.`);
+      if (["CARD_CLEARING", "PLATFORM_RECEIVABLE", "UNDEPOSITED_CASH"].includes(ma.kind)) throw new UserFacingError(`Expenses can't be paid from ${ma.name}.`);
+    }
   }
   const accountIds = input.lines.flatMap((l) => (l.accountId ? [l.accountId] : []));
   const accounts = await tx.account.findMany({ where: { id: { in: accountIds } }, include: { group: true, moneyAccount: true } });
@@ -59,6 +61,7 @@ export async function saveExpense(tx: Tx, input: ExpenseInput, actor: Actor) {
       unit: item ? (l.unit === "PURCHASE" && item.purchaseUnit ? item.purchaseUnit : item.baseUnit) : null,
       description: l.description || item?.name || null,
       amountCents: l.amount,
+      paidFromMoneyAccountId: input.terms === "PAID_NOW" ? l.paidFromMoneyAccountId || input.paidFromMoneyAccountId : null,
     };
   });
   const total = lines.reduce((a, l) => a + l.amountCents, 0n);
@@ -72,7 +75,8 @@ export async function saveExpense(tx: Tx, input: ExpenseInput, actor: Actor) {
     date: toDbDate(input.date),
     supplierId,
     terms: input.terms,
-    paidFromMoneyAccountId: input.terms === "PAID_NOW" ? input.paidFromMoneyAccountId : null,
+    // Header source: the expense's own, else its first line's (lists show it; lines hold the split).
+    paidFromMoneyAccountId: input.terms === "PAID_NOW" ? input.paidFromMoneyAccountId || lines[0]?.paidFromMoneyAccountId || null : null,
     dueDate: input.terms === "ON_ACCOUNT" ? dueDate : null,
     receiptNo: input.receiptNo || null,
     isVatInvoice: input.isVatInvoice,
@@ -137,15 +141,22 @@ export async function approveExpense(tx: Tx, expenseId: string, actor: Actor) {
   // Paid from the cash drawer after the shift was closed would break the count.
   // Keep a link made on the sales screen (any source); drawer payments must hit an open shift.
   let salesReportId: string | null = e.salesReportId;
-  if (e.terms === "PAID_NOW" && e.paidFromMoneyAccountId) {
-    const ma = await tx.moneyAccount.findUniqueOrThrow({ where: { id: e.paidFromMoneyAccountId } });
-    if (ma.kind === "CASH_DRAWER") {
-      const reports = await tx.salesReport.findMany({ where: { locationId: L, businessDate: e.date }, include: { cashCount: true }, orderBy: { shiftNo: "asc" } });
-      const open = reports.find((r) => !r.cashCount);
-      if (reports.length && !open) throw new UserFacingError("That day's shift is already closed. Pay this from petty cash instead.");
-      const linked = reports.find((r) => r.id === e.salesReportId && !r.cashCount);
-      salesReportId = linked?.id ?? open?.id ?? null;
+  // Amount per source: each line may come from a different account.
+  const bySource = new Map<string, bigint>();
+  if (e.terms === "PAID_NOW") {
+    for (const l of e.lines) {
+      const src = l.paidFromMoneyAccountId ?? e.paidFromMoneyAccountId;
+      if (!src) throw new UserFacingError("Choose where each line was paid from.");
+      bySource.set(src, (bySource.get(src) ?? 0n) + l.amountCents);
     }
+  }
+  const sources = await tx.moneyAccount.findMany({ where: { id: { in: [...bySource.keys()] } } });
+  if (sources.some((ma) => ma.kind === "CASH_DRAWER")) {
+    const reports = await tx.salesReport.findMany({ where: { locationId: L, businessDate: e.date }, include: { cashCount: true }, orderBy: { shiftNo: "asc" } });
+    const open = reports.find((r) => !r.cashCount);
+    if (reports.length && !open) throw new UserFacingError("That day's shift is already closed. Pay this from petty cash instead.");
+    const linked = reports.find((r) => r.id === e.salesReportId && !r.cashCount);
+    salesReportId = linked?.id ?? open?.id ?? null;
   }
 
   const lines: DraftLine[] = [];
@@ -166,14 +177,11 @@ export async function approveExpense(tx: Tx, expenseId: string, actor: Actor) {
       });
     }
   }
-  let creditAccount;
   if (e.terms === "PAID_NOW") {
-    const ma = await tx.moneyAccount.findUniqueOrThrow({ where: { id: e.paidFromMoneyAccountId! } });
-    creditAccount = acct(ma.glAccountId);
+    for (const ma of sources) lines.push(...cr(acct(ma.glAccountId), L, bySource.get(ma.id)!, { supplierId: e.supplierId }));
   } else {
-    creditAccount = key("ACCOUNTS_PAYABLE");
+    lines.push(...cr(key("ACCOUNTS_PAYABLE"), L, e.totalCents, { supplierId: e.supplierId }));
   }
-  lines.push(...cr(creditAccount, L, e.totalCents, { supplierId: e.supplierId }));
 
   const entryId = await postEntry(tx, {
     date,
@@ -183,9 +191,10 @@ export async function approveExpense(tx: Tx, expenseId: string, actor: Actor) {
     postedById: actor.id,
     lines,
   });
-  if (e.terms === "PAID_NOW") {
+  // One payment per source; only the first carries the entry id (it's unique).
+  for (const [i, ma] of sources.entries()) {
     await tx.expensePayment.create({
-      data: { expenseId: e.id, date: e.date, moneyAccountId: e.paidFromMoneyAccountId!, amountCents: e.totalCents, journalEntryId: entryId, createdById: actor.id },
+      data: { expenseId: e.id, date: e.date, moneyAccountId: ma.id, amountCents: bySource.get(ma.id)!, journalEntryId: i === 0 ? entryId : null, createdById: actor.id },
     });
   }
   await tx.expense.update({
