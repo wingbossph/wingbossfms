@@ -9,16 +9,20 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { runtimeDatabaseUrl } from "@/lib/db-url";
 import { DEMO_PASSWORD, seedBase } from "./base";
 import { seedDemo } from "./demo";
+import { ensureExpenseSources } from "@/domains/expenses/sources";
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: runtimeDatabaseUrl() }) });
 
 async function main() {
   if ((await db.location.count()) > 0) {
-    console.log("Database already seeded. Use `npm run db:reset` to start over.");
+    // Already seeded: only add what newer versions expect (idempotent).
+    const created = await db.$transaction((tx) => ensureExpenseSources(tx));
+    console.log(`Database already seeded${created ? `; added ${created} expense source account(s)` : ""}. Use \`npm run db:reset\` to start over.`);
     return;
   }
   const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "owner@wingboss.ph";
   await seedBase(db, { ownerEmail, ownerPassword: process.env.SEED_OWNER_PASSWORD ?? DEMO_PASSWORD });
+  await db.$transaction((tx) => ensureExpenseSources(tx));
   console.log("Seeded base data: 4 locations, roles, chart of accounts, users, items, menu.");
   if (process.env.SEED_DEMO === "1") {
     console.log("Adding 60 days of demo activity (takes a few minutes)…");

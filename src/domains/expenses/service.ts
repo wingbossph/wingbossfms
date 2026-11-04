@@ -135,14 +135,16 @@ export async function approveExpense(tx: Tx, expenseId: string, actor: Actor) {
   const L = e.locationId;
 
   // Paid from the cash drawer after the shift was closed would break the count.
-  let salesReportId: string | null = null;
+  // Keep a link made on the sales screen (any source); drawer payments must hit an open shift.
+  let salesReportId: string | null = e.salesReportId;
   if (e.terms === "PAID_NOW" && e.paidFromMoneyAccountId) {
     const ma = await tx.moneyAccount.findUniqueOrThrow({ where: { id: e.paidFromMoneyAccountId } });
     if (ma.kind === "CASH_DRAWER") {
       const reports = await tx.salesReport.findMany({ where: { locationId: L, businessDate: e.date }, include: { cashCount: true }, orderBy: { shiftNo: "asc" } });
       const open = reports.find((r) => !r.cashCount);
       if (reports.length && !open) throw new UserFacingError("That day's shift is already closed. Pay this from petty cash instead.");
-      salesReportId = open?.id ?? null;
+      const linked = reports.find((r) => r.id === e.salesReportId && !r.cashCount);
+      salesReportId = linked?.id ?? open?.id ?? null;
     }
   }
 

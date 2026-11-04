@@ -5,11 +5,19 @@ import { Badge } from "@/components/ui/badge";
 import { requireUser } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { formatBusinessDate } from "@/lib/dates";
-import { CONSOLIDATED_PRODUCT, drawerActivity, priceMap } from "@/domains/sales/service";
-import { loyverseCheck, LOYVERSE_DISCOUNT_NOTE } from "@/domains/sales/loyverse/import";
+import {
+  CONSOLIDATED_PRODUCT,
+  drawerActivity,
+  priceMap,
+} from "@/domains/sales/service";
+import {
+  loyverseCheck,
+  LOYVERSE_DISCOUNT_NOTE,
+} from "@/domains/sales/loyverse/import";
 import { SalesEditor } from "./sales-editor";
 import { ShiftExpenses } from "./shift-expenses";
 import { expenseCategories } from "@/domains/expenses/queries";
+import { EXPENSE_SOURCES } from "@/domains/expenses/sources";
 import { ShiftClose } from "./shift-close";
 import { ReportActions } from "./report-actions";
 import { formatPeso } from "@/lib/money";
@@ -18,14 +26,21 @@ export const metadata = { title: "Sales report" };
 
 const s = (v: bigint) => v.toString();
 
-export default async function SalesReportPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SalesReportPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
   const report = await db.salesReport.findUnique({
     where: { id },
     include: {
       location: true,
-      lines: { include: { product: true }, orderBy: { product: { sortOrder: "asc" } } },
+      lines: {
+        include: { product: true },
+        orderBy: { product: { sortOrder: "asc" } },
+      },
       discounts: true,
       voids: true,
       payments: true,
@@ -40,28 +55,84 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
   const canExpense = can("expenses:create");
   const [dayExpenses, categories, moneyAccounts] = await Promise.all([
     db.expense.findMany({
-      where: { locationId: report.locationId, date: report.businessDate, status: { in: ["SUBMITTED", "POSTED"] }, OR: [{ salesReportId: report.id }, { salesReportId: null }] },
+      where: {
+        locationId: report.locationId,
+        date: report.businessDate,
+        status: { in: ["SUBMITTED", "POSTED"] },
+        OR: [{ salesReportId: report.id }, { salesReportId: null }],
+      },
       include: { lines: { include: { account: true } } },
       orderBy: { createdAt: "asc" },
     }),
     canExpense ? expenseCategories({ costsOnly: true }) : Promise.resolve([]),
-    db.moneyAccount.findMany({ where: { isActive: true, locationId: report.locationId, kind: { in: ["CASH_DRAWER", "PETTY_CASH", "EWALLET", "BANK"] } }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
+    db.moneyAccount.findMany({
+      select: { id: true, name: true, kind: true, locationId: true },
+    }),
   ]);
   const moneyName = new Map(moneyAccounts.map((m) => [m.id, m.name]));
-  const expensesCents = dayExpenses.reduce((a, e) => a + e.totalCents, 0n);
-  const [products, prices, discountTypes, channels, activity, check, pendingRequest, cashier] = await Promise.all([
-    db.product.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+  // Only cash paid out of this branch's drawer comes out of the day's sales money.
+  const drawerIds = new Set(
+    moneyAccounts
+      .filter(
+        (m) => m.kind === "CASH_DRAWER" && m.locationId === report.locationId,
+      )
+      .map((m) => m.id),
+  );
+  const fromDrawer = (e: (typeof dayExpenses)[number]) =>
+    e.terms === "PAID_NOW" && drawerIds.has(e.paidFromMoneyAccountId ?? "");
+  const expensesCents = dayExpenses
+    .filter(fromDrawer)
+    .reduce((a, e) => a + e.totalCents, 0n);
+  const [
+    products,
+    prices,
+    discountTypes,
+    channels,
+    activity,
+    check,
+    pendingRequest,
+    cashier,
+  ] = await Promise.all([
+    db.product.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
     priceMap(db, report.locationId, ymd),
-    db.discountType.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    db.paymentChannel.findMany({ where: { isActive: true, locations: { some: { locationId: report.locationId } } }, orderBy: { sortOrder: "asc" } }),
+    db.discountType.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    }),
+    db.paymentChannel.findMany({
+      where: {
+        isActive: true,
+        locations: { some: { locationId: report.locationId } },
+      },
+      orderBy: { sortOrder: "asc" },
+    }),
     drawerActivity(db, report.id),
     loyverseCheck(db, report.id),
-    db.adjustmentRequest.findFirst({ where: { entityType: "SalesReport", entityId: report.id, status: "PENDING" } }),
-    db.user.findUnique({ where: { id: report.cashierUserId }, select: { name: true } }),
+    db.adjustmentRequest.findFirst({
+      where: {
+        entityType: "SalesReport",
+        entityId: report.id,
+        status: "PENDING",
+      },
+    }),
+    db.user.findUnique({
+      where: { id: report.cashierUserId },
+      select: { name: true },
+    }),
   ]);
 
   const editable = report.status === "DRAFT" && can("sales:create");
-  const statusLabel = report.status === "DRAFT" ? "Draft" : report.status === "POSTED" ? (report.approvedAt ? "Reviewed" : "Submitted") : report.status;
+  const statusLabel =
+    report.status === "DRAFT"
+      ? "Draft"
+      : report.status === "POSTED"
+        ? report.approvedAt
+          ? "Reviewed"
+          : "Submitted"
+        : report.status;
 
   return (
     <>
@@ -70,10 +141,16 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
         description={`${report.location.name}${report.shiftNo > 1 ? ` · Shift ${report.shiftNo}` : ""} · Opened by ${cashier?.name ?? "—"}`}
         actions={
           <>
-            <Badge variant={report.status === "DRAFT" ? "outline" : "default"} className="h-8 px-3 text-sm">
+            <Badge
+              variant={report.status === "DRAFT" ? "outline" : "default"}
+              className="h-8 px-3 text-sm"
+            >
               {statusLabel}
             </Badge>
-            <Link href="/sales" className="self-center text-sm underline underline-offset-4">
+            <Link
+              href="/sales"
+              className="self-center text-sm underline underline-offset-4"
+            >
               All sales
             </Link>
           </>
@@ -81,14 +158,21 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
       />
 
       {check && (
-        <div className={`mb-4 rounded-md border p-3 text-sm ${check.differenceCents === 0n ? "" : "border-warning bg-warning/10"}`}>
-          Loyverse check: {check.receipts} receipts, net {formatPeso(check.loyverseNetCents)} · this report {formatPeso(check.reportNetCents)}
-          {check.differenceCents === 0n ? " · matches ✓" : ` · difference ${formatPeso(check.differenceCents)}`}
+        <div
+          className={`mb-4 rounded-md border p-3 text-sm ${check.differenceCents === 0n ? "" : "border-warning bg-warning/10"}`}
+        >
+          Loyverse check: {check.receipts} receipts, net{" "}
+          {formatPeso(check.loyverseNetCents)} · this report{" "}
+          {formatPeso(check.reportNetCents)}
+          {check.differenceCents === 0n
+            ? " · matches ✓"
+            : ` · difference ${formatPeso(check.differenceCents)}`}
         </div>
       )}
       {pendingRequest && (
         <div className="mb-4 rounded-md border border-warning bg-warning/10 p-3 text-sm">
-          Correction requested: “{pendingRequest.reason}”. Waiting for an admin to reopen this report.
+          Correction requested: “{pendingRequest.reason}”. Waiting for an admin
+          to reopen this report.
         </div>
       )}
 
@@ -97,15 +181,39 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
         report={{
           id: report.id,
           updatedAt: report.updatedAt.toISOString(),
-          serviceCharge: formatPeso(report.serviceChargeCents, { symbol: false }),
+          serviceCharge: formatPeso(report.serviceChargeCents, {
+            symbol: false,
+          }),
           mismatchExplanation: report.mismatchExplanation ?? "",
           importedLines: report.lines
             .filter((l) => l.source !== "MANUAL")
-            .map((l) => ({ name: l.product.name, qty: l.qty.toString(), grossCents: s(l.grossCents), paxHundredths: s(BigInt(Math.round(Number(l.pax) * 100))) })),
-          manualLines: Object.fromEntries(report.lines.filter((l) => l.source === "MANUAL" && l.product.name !== CONSOLIDATED_PRODUCT).map((l) => [l.productId, l.qty.toString()])),
+            .map((l) => ({
+              name: l.product.name,
+              qty: l.qty.toString(),
+              grossCents: s(l.grossCents),
+              paxHundredths: s(BigInt(Math.round(Number(l.pax) * 100))),
+            })),
+          manualLines: Object.fromEntries(
+            report.lines
+              .filter(
+                (l) =>
+                  l.source === "MANUAL" &&
+                  l.product.name !== CONSOLIDATED_PRODUCT,
+              )
+              .map((l) => [l.productId, l.qty.toString()]),
+          ),
           consolidated: (() => {
-            const l = report.lines.find((x) => x.source === "MANUAL" && x.product.name === CONSOLIDATED_PRODUCT);
-            return l ? { gross: formatPeso(l.grossCents, { symbol: false }), pax: Number(l.pax).toString() } : null;
+            const l = report.lines.find(
+              (x) =>
+                x.source === "MANUAL" &&
+                x.product.name === CONSOLIDATED_PRODUCT,
+            );
+            return l
+              ? {
+                  gross: formatPeso(l.grossCents, { symbol: false }),
+                  pax: Number(l.pax).toString(),
+                }
+              : null;
           })(),
           discounts: report.discounts.map((d) => ({
             discountTypeId: d.discountTypeId,
@@ -116,12 +224,43 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
             notes: d.notes ?? "",
             imported: d.notes === LOYVERSE_DISCOUNT_NOTE,
           })),
-          voids: report.voids.map((v) => ({ amount: formatPeso(v.amountCents, { symbol: false }), isRefund: v.isRefund, reason: v.reason, receiptNo: v.receiptNo ?? "" })),
-          payments: Object.fromEntries(report.payments.map((p) => [p.channelId, { amount: formatPeso(p.amountCents, { symbol: false }), reference: p.reference ?? "" }])),
+          voids: report.voids.map((v) => ({
+            amount: formatPeso(v.amountCents, { symbol: false }),
+            isRefund: v.isRefund,
+            reason: v.reason,
+            receiptNo: v.receiptNo ?? "",
+          })),
+          payments: Object.fromEntries(
+            report.payments.map((p) => [
+              p.channelId,
+              {
+                amount: formatPeso(p.amountCents, { symbol: false }),
+                reference: p.reference ?? "",
+              },
+            ]),
+          ),
         }}
-        products={products.filter((p) => p.name !== CONSOLIDATED_PRODUCT).map((p) => ({ id: p.id, name: p.name, type: p.type, category: p.category ?? undefined, priceCents: s(prices.get(p.id) ?? 0n), paxPerUnit: p.paxPerUnit.toString() }))}
-        discountTypes={discountTypes.map((d) => ({ id: d.id, name: d.name, rateBp: d.defaultRateBp, requiresIdentity: d.requiresIdentity }))}
-        channels={channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
+        products={products
+          .filter((p) => p.name !== CONSOLIDATED_PRODUCT)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            type: p.type,
+            category: p.category ?? undefined,
+            priceCents: s(prices.get(p.id) ?? 0n),
+            paxPerUnit: p.paxPerUnit.toString(),
+          }))}
+        discountTypes={discountTypes.map((d) => ({
+          id: d.id,
+          name: d.name,
+          rateBp: d.defaultRateBp,
+          requiresIdentity: d.requiresIdentity,
+        }))}
+        channels={channels.map((c) => ({
+          id: c.id,
+          name: c.name,
+          kind: c.kind,
+        }))}
         expensesCents={s(expensesCents)}
         expensesSlot={
           dayExpenses.length > 0 || canExpense ? (
@@ -131,16 +270,38 @@ export default async function SalesReportPage({ params }: { params: Promise<{ id
               expenses={dayExpenses.map((e) => ({
                 id: e.id,
                 number: e.number,
-                description: e.lines.map((l) => l.description).filter(Boolean).join(", ") || `Expense #${e.number}`,
-                category: [...new Set(e.lines.map((l) => l.account.name))].join(", "),
-                paidFrom: e.terms === "ON_ACCOUNT" ? "On account" : (moneyName.get(e.paidFromMoneyAccountId ?? "") ?? "Other account"),
+                description:
+                  e.lines
+                    .map((l) => l.description)
+                    .filter(Boolean)
+                    .join(", ") || `Expense #${e.number}`,
+                category: [...new Set(e.lines.map((l) => l.account.name))].join(
+                  ", ",
+                ),
+                paidFrom:
+                  e.terms === "ON_ACCOUNT"
+                    ? "On account"
+                    : drawerIds.has(e.paidFromMoneyAccountId ?? "")
+                      ? "Cash Drawer"
+                      : (moneyName.get(e.paidFromMoneyAccountId ?? "") ??
+                        "Other account"),
+                deducted: fromDrawer(e),
                 amountCents: s(e.totalCents),
                 status: e.status,
-                removable: e.salesReportId === report.id && !report.cashCount && ((e.submittedById === user.id && canExpense) || can("records:void")),
+                removable:
+                  e.salesReportId === report.id &&
+                  !report.cashCount &&
+                  ((e.submittedById === user.id && canExpense) ||
+                    can("records:void")),
               }))}
-              categories={categories.map((g) => ({ group: g.group, accounts: g.accounts.map((a) => ({ id: a.id, name: a.name })) }))}
-              moneyAccounts={moneyAccounts.map((m) => ({ id: m.id, name: m.name }))}
-              defaultMoneyAccountId={moneyAccounts.find((m) => m.kind === "CASH_DRAWER")?.id ?? moneyAccounts[0]?.id ?? ""}
+              categories={categories.map((g) => ({
+                group: g.group,
+                accounts: g.accounts.map((a) => ({ id: a.id, name: a.name })),
+              }))}
+              sources={EXPENSE_SOURCES.map((x) => ({
+                key: x.key,
+                label: x.label,
+              }))}
             />
           ) : null
         }
