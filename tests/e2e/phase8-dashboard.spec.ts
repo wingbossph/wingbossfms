@@ -40,7 +40,7 @@ test("owner sets a budget and changes a business setting", async ({ page }) => {
   await ownerLogin(page);
   await page.goto("/reports/budget");
   await page.getByLabel("Only accounts with a budget").uncheck();
-  await page.getByLabel(/Electricity Jan/).fill("12000");
+  await page.getByLabel(/Utility - Davao Light Jan/).fill("12000");
   await page.getByRole("button", { name: "Save budget" }).click();
   await expect(page.getByText("Budget saved.")).toBeVisible();
 

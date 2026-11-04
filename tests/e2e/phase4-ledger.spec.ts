@@ -48,7 +48,7 @@ test("manual journal entry can't be posted until it balances", async ({ page }) 
   await ownerLogin(page);
   await page.goto("/ledger/new");
   await page.fill("#jmemo", "Accrue electricity");
-  await page.getByLabel("Line 1 account").selectOption({ label: "6210 Electricity" });
+  await page.getByLabel("Line 1 account").selectOption({ label: "6210 Utility - Davao Light" });
   await page.getByLabel("Line 1 debit").fill("1500");
   await page.getByLabel("Line 2 account").selectOption({ label: "2010 Accounts payable" });
   await page.getByLabel("Line 2 credit").fill("1400");

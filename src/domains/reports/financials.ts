@@ -140,7 +140,8 @@ export function pnlFigures(chart: readonly ChartAccount[], col: PnlColumn): PnlF
       case "OPERATING_EXPENSE":
         if (a.kpiTag === "DEPRECIATION") depreciation += v;
         else opexExDep += v;
-        if (a.kpiTag === "OCCUPANCY") occupancy += v;
+        // Rent (6110) sits under Operating expenses but still counts as occupancy.
+        if (a.kpiTag === "OCCUPANCY" || a.code === "6110") occupancy += v;
         break;
       case "OTHER_INCOME_EXPENSE":
         otherNet += v;
