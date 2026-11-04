@@ -9,6 +9,7 @@ import { assertCan, assertCanAnywhere, requireActor, type CurrentUser } from "@/
 import { linkAttachments } from "@/server/attachments";
 import { pesoField } from "@/domains/admin/schemas";
 import { manilaDateString, toDbDate } from "@/lib/dates";
+import { EXPENSE_SOURCE_KEYS, resolveExpenseSource } from "./sources";
 import { approveExpense, payBill, rejectExpense, saveExpense, submitExpense, voidExpense } from "./service";
 import { decisionSchema, expenseSchema, paymentSchema, recurringSchema, supplierSchema } from "./schemas";
 
@@ -200,7 +201,7 @@ const shiftExpenseSchema = z.object({
   accountId: z.string().min(1, "Choose a category"),
   description: z.string().trim().min(2, "What was it for?").max(200),
   amount: pesoField,
-  paidFromMoneyAccountId: z.string().min(1, "Where was it paid from?"),
+  source: z.enum(EXPENSE_SOURCE_KEYS, { message: "Where was it paid from?" }),
   receiptNo: z.string().trim().max(60).optional().default(""),
 });
 
@@ -215,13 +216,14 @@ export async function addShiftExpenseAction(raw: unknown): Promise<ActionState> 
     assertCan(user, "expenses:create", report.locationId);
     if (report.cashCount) throw new UserFacingError("This shift is already closed. Record the expense on the Expenses page.");
     const status = await db.$transaction(async (tx) => {
+      const paidFrom = await resolveExpenseSource(tx, input.source, report.locationId);
       const saved = await saveExpense(
         tx,
         expenseSchema.parse({
           locationId: report.locationId,
           date: report.businessDate.toISOString().slice(0, 10),
           terms: "PAID_NOW",
-          paidFromMoneyAccountId: input.paidFromMoneyAccountId,
+          paidFromMoneyAccountId: paidFrom,
           receiptNo: input.receiptNo,
           lines: [{ accountId: input.accountId, description: input.description, amount: (Number(input.amount) / 100).toFixed(2) }],
         }),

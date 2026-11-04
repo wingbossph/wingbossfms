@@ -219,6 +219,15 @@ export function SalesEditor({
     setQty(id, String(Math.max(0, cur + d)));
   };
   const remaining = totals.netCents - totals.paymentsCents;
+  // Net cash: what should be in the drawer. Payments to non-cash channels
+  // (GCash, Maya, bank, Grab…) and Cash Drawer expenses don't stay as cash.
+  const cashChannel = new Set(
+    channels.filter((c) => c.kind === "CASH").map((c) => c.id),
+  );
+  const nonCashCents = Object.entries(st.payments)
+    .filter(([id]) => !cashChannel.has(id))
+    .reduce((a, [, p]) => a + cents(p.amount), 0n);
+  const netCashCents = totals.netCents - nonCashCents - BigInt(expensesCents);
   const byCategory = products.some((p) => p.category);
   const groupOf = (p: Product) => (byCategory ? p.category || "Other" : p.type);
   const groups = byCategory
@@ -735,17 +744,25 @@ export function SalesEditor({
           <span className="text-base">
             Net <b>{formatPeso(totals.netCents)}</b>
           </span>
-          {BigInt(expensesCents) > 0n && (
-            <>
-              <span>
-                Expenses <b>−{formatPeso(BigInt(expensesCents))}</b>
-              </span>
-              <span className="text-base">
-                Net after expenses{" "}
-                <b>{formatPeso(totals.netCents - BigInt(expensesCents))}</b>
-              </span>
-            </>
+          {nonCashCents !== 0n && (
+            <span>
+              Online payments <b>−{formatPeso(nonCashCents)}</b>
+            </span>
           )}
+          {BigInt(expensesCents) > 0n && (
+            <span>
+              Cash Drawer expenses <b>−{formatPeso(BigInt(expensesCents))}</b>
+            </span>
+          )}
+          <span
+            className="text-base"
+            title="Net sales less online payments and Cash Drawer expenses: the cash that should be in the drawer"
+          >
+            <span className="font-semibold uppercase tracking-wide">
+              Cash on hand
+            </span>{" "}
+            <b>{formatPeso(netCashCents)}</b>
+          </span>
           <span>
             Paid <b>{formatPeso(totals.paymentsCents)}</b>
           </span>
