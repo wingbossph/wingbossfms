@@ -86,6 +86,7 @@ export default async function SalesPage({
       )}
       <ListFilters
         dateRange
+        yearMonth={{ today: manilaDateString() }}
         locations={user.locations.filter((l) => locationsWithAny(user, "sales:view", "sales:create").includes(l.id)).map((l) => ({ value: l.id, label: l.name }))}
         categoryLabel="Status"
         categories={[
