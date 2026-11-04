@@ -9,6 +9,7 @@ import { expenseWhere, type ExpenseFilters } from "@/domains/expenses/queries";
 import { formatBusinessDate, manilaDateString } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import { ExpensesTable, type ExpenseRow } from "./expenses-table";
+import { canApproveWith } from "@/domains/expenses/rules";
 import { EXPENSE_STATUS_LABEL as STATUS_LABEL } from "@/domains/expenses/labels";
 
 export const metadata = { title: "Expenses" };
@@ -47,6 +48,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     terms: e.terms === "PAID_NOW" ? "Paid" : e.paidCents >= e.totalCents ? "Bill · paid" : `Bill · ${formatPeso(e.totalCents - e.paidCents)} due`,
     status: STATUS_LABEL[e.status],
     receipt: withPhoto.has(e.id) ? "Photo" : e.receiptNo ? `OR ${e.receiptNo}` : "",
+    approvable: e.status === "SUBMITTED" && canApproveWith(e.requiredApproval ?? "expenses:approve", (p) => user.access.can(p, e.locationId)),
   }));
   const posted = expenses.filter((e) => e.status === "POSTED");
   const total = posted.reduce((a, e) => a + e.totalCents, 0n);

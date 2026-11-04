@@ -63,7 +63,7 @@ export function DataTable<T>({
   });
 
   function exportVisible() {
-    const cols = table.getAllLeafColumns().filter((c) => c.id !== "actions");
+    const cols = table.getAllLeafColumns().filter((c) => c.id !== "actions" && c.id !== "select");
     const header = cols.map((c) => (typeof c.columnDef.header === "string" ? c.columnDef.header : c.id));
     const rows = table.getSortedRowModel().rows.map((r) =>
       cols.map((c) => {

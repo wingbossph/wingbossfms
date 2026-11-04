@@ -254,3 +254,27 @@ export async function removeShiftExpenseAction(expenseId: string): Promise<Actio
     return { ok: true, message: "Expense removed." };
   });
 }
+
+/** Approves several submitted expenses; each posts on its own, so one that can't be approved doesn't block the rest. */
+export async function approveExpensesAction(expenseIds: string[]): Promise<ActionState> {
+  return handleAction(async () => {
+    const ids = z.array(z.string().min(1)).min(1, "Select at least one expense.").max(200).parse(expenseIds);
+    const user = await requireActor();
+    let approved = 0;
+    const failed: string[] = [];
+    for (const id of ids) {
+      const e = await db.expense.findUnique({ where: { id } });
+      if (!e || !user.access.locationIds.includes(e.locationId)) continue;
+      try {
+        await db.$transaction((tx) => approveExpense(tx, id, actorOf(user)));
+        approved++;
+      } catch (err) {
+        failed.push(`#${e.number}: ${err instanceof UserFacingError ? err.message : "couldn't be approved"}`);
+      }
+    }
+    revalidatePath("/expenses");
+    revalidatePath("/expenses/approvals");
+    if (!approved) throw new UserFacingError(failed.length ? `Nothing approved. ${failed.join(" ")}` : "Nothing to approve.");
+    return { ok: true, message: `Approved and posted ${approved} expense${approved === 1 ? "" : "s"}.${failed.length ? ` Not approved: ${failed.join("; ")}` : ""}` };
+  });
+}
