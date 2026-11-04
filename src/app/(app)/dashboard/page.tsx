@@ -100,7 +100,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <PageHeader title="Dashboard" description={`${location === "all" ? "All locations" : allowed.find((l) => l.id === location)?.name} · ${range.from === range.to ? range.from : `${range.from} to ${range.to}`} · compared with ${prev.from} to ${prev.to}`} />
-      <DashboardFilters preset={preset} from={range.from} to={range.to} location={location} compare={compare} locations={allowed.map((l) => ({ id: l.id, name: l.name }))} />
+      <DashboardFilters preset={preset} from={range.from} to={range.to} location={location} compare={compare} locations={allowed.map((l) => ({ id: l.id, name: l.name }))} today={today} />
 
       <section aria-label="Key figures" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card label="Net sales" value={formatPeso(now.netSales)} href={`/reports/daily-sales${q()}`}>

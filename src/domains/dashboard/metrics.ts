@@ -30,6 +30,14 @@ export function comparisonRange(r: Range, mode: string): Range {
     const back = (d: string) => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`.replace(/-02-29$/, "-02-28");
     return { from: back(r.from), to: back(r.to) };
   }
+  // A whole calendar year or month compares with the whole previous one.
+  const [y, m, d] = r.from.split("-").map(Number);
+  const monthEnd = (yy: number, mm: number) => new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+  if (d === 1 && m === 1 && r.to === `${y}-12-31`) return { from: `${y - 1}-01-01`, to: `${y - 1}-12-31` };
+  if (d === 1 && r.to === monthEnd(y, m)) {
+    const [py, pm] = m === 1 ? [y - 1, 12] : [y, m - 1];
+    return { from: `${py}-${String(pm).padStart(2, "0")}-01`, to: monthEnd(py, pm) };
+  }
   const n = daysIn(r.from, r.to);
   return { from: addDays(r.from, -n), to: addDays(r.from, -1) };
 }
