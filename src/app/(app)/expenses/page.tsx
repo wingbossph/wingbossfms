@@ -70,6 +70,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       />
       <ListFilters
         dateRange
+        yearMonth={{ today: manilaDateString() }}
         locations={user.locations.filter((l) => viewIds.includes(l.id)).map((l) => ({ value: l.id, label: l.name }))}
         categories={groups.map((g) => ({ value: g.id, label: g.name }))}
         extra={[{ param: "status", label: "Status", options: Object.entries(STATUS_LABEL).filter(([k]) => k !== "APPROVED").map(([value, label]) => ({ value, label })) }]}
