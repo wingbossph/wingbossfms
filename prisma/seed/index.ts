@@ -15,14 +15,15 @@ const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: runtimeD
 
 async function main() {
   if ((await db.location.count()) > 0) {
-    // Already seeded: only add what newer versions expect (idempotent).
-    const created = await db.$transaction((tx) => ensureExpenseSources(tx));
+    // Already seeded: only add what newer versions expect (idempotent). The build
+    // server can be far from the database, so allow a slow transaction.
+    const created = await db.$transaction((tx) => ensureExpenseSources(tx), { timeout: 300_000, maxWait: 60_000 });
     console.log(`Database already seeded${created ? `; added ${created} expense source account(s)` : ""}. Use \`npm run db:reset\` to start over.`);
     return;
   }
   const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "owner@wingboss.ph";
   await seedBase(db, { ownerEmail, ownerPassword: process.env.SEED_OWNER_PASSWORD ?? DEMO_PASSWORD });
-  await db.$transaction((tx) => ensureExpenseSources(tx));
+  await db.$transaction((tx) => ensureExpenseSources(tx), { timeout: 300_000, maxWait: 60_000 });
   console.log("Seeded base data: 4 locations, roles, chart of accounts, users, items, menu.");
   if (process.env.SEED_DEMO === "1") {
     console.log("Adding 60 days of demo activity (takes a few minutes)…");
