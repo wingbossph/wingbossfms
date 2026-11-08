@@ -191,7 +191,8 @@ export async function expensesByGroup(ids: string[], r: Range, chart?: ChartAcco
   return { groups: list, drivers };
 }
 
-export async function branchComparison(ids: string[], r: Range, chart?: ChartAccount[]) {
+/** Per-location figures. Commissary/office are left out when they had no activity, unless includeAll (the leaderboard). */
+export async function branchComparison(ids: string[], r: Range, chart?: ChartAccount[], opts: { includeAll?: boolean } = {}) {
   const c = chart ?? (await loadChart(db));
   const locations = await db.location.findMany({ where: { id: { in: ids } }, orderBy: [{ sortOrder: "asc" }] });
   const bal = await loadBalances(db, { from: r.from, to: r.to, locationIds: ids });
@@ -199,8 +200,8 @@ export async function branchComparison(ids: string[], r: Range, chart?: ChartAcc
   for (const l of locations) {
     const f = pnlFigures(c, { key: l.id, label: l.name, balances: bal.get(l.id) ?? new Map(), consolidated: false });
     const s = await salesTotals([l.id], r);
-    if (l.type !== "BRANCH" && f.netSales === 0n && f.netProfit === 0n) continue;
-    out.push({ id: l.id, name: l.name, type: l.type, netSales: f.netSales, pax: s.pax, avgPerPax: s.pax > 0 ? BigInt(Math.round(Number(s.net) / s.pax)) : null, foodCostPct: ratio(f.cogs, f.netSales), laborCostPct: ratio(f.labor, f.netSales), netProfit: f.netProfit, marginPct: ratio(f.netProfit, f.netSales) });
+    if (!opts.includeAll && l.type !== "BRANCH" && f.netSales === 0n && f.netProfit === 0n) continue;
+    out.push({ id: l.id, name: l.name, type: l.type, netSales: f.netSales, expenses: f.cogs + f.labor + f.opex + f.depreciation, pax: s.pax, avgPerPax: s.pax > 0 ? BigInt(Math.round(Number(s.net) / s.pax)) : null, foodCostPct: ratio(f.cogs, f.netSales), laborCostPct: ratio(f.labor, f.netSales), netProfit: f.netProfit, marginPct: ratio(f.netProfit, f.netSales) });
   }
   return out;
 }

@@ -61,6 +61,7 @@ export function DashboardFilters({ preset, from, to, location, compare, location
       )}
       <select className={sel} value={location} onChange={(e) => set({ location: e.target.value })} aria-label="Location">
         {locations.length > 1 && <option value="all">All locations (consolidated)</option>}
+        {locations.length > 1 && <option value="leaderboard">Leaderboard (rank all locations)</option>}
         {locations.map((l) => (
           <option key={l.id} value={l.id}>
             {l.name}

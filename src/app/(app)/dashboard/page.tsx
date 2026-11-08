@@ -51,13 +51,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const today = manilaDateString();
   const allowed = user.locations.filter((l) => user.access.can("dashboard:view", l.id));
-  const location = sp.location && (sp.location === "all" || allowed.some((l) => l.id === sp.location)) ? sp.location : allowed.length > 1 ? "all" : allowed[0].id;
-  const ids = location === "all" ? allowed.map((l) => l.id) : [location];
+  const many = allowed.length > 1;
+  const location =
+    sp.location && (((sp.location === "all" || sp.location === "leaderboard") && many) || allowed.some((l) => l.id === sp.location)) ? sp.location : many ? "all" : allowed[0].id;
+  // Leaderboard: the consolidated view plus every location (branches, commissary, office) ranked side by side.
+  const leaderboard = location === "leaderboard";
+  const ids = location === "all" || leaderboard ? allowed.map((l) => l.id) : [location];
+  const rankBy = (["profit", "sales", "margin", "growth"] as const).find((k) => k === sp.rank) ?? "profit";
   const preset = ["today", "week", "month", "custom"].includes(sp.preset ?? "") ? sp.preset! : "month";
   const range = presetRange(preset, today, { from: sp.from, to: sp.to });
   const compare = sp.compare === "yoy" ? "yoy" : "prev";
   const prev = comparisonRange(range, compare);
-  const q = (extra: Record<string, string> = {}) => `?${new URLSearchParams({ from: range.from, to: range.to, ...(location !== "all" ? { location } : {}), ...extra })}`;
+  const q = (extra: Record<string, string> = {}) => `?${new URLSearchParams({ from: range.from, to: range.to, ...(location !== "all" && !leaderboard ? { location } : {}), ...extra })}`;
 
   const chart = await loadChart(db);
   const [now, before, money, trend, exp, branches, inv, alertList, pnlDays] = await Promise.all([
@@ -66,7 +71,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     moneyIn(ids, range),
     salesTrend(ids, range),
     expensesByGroup(ids, range, chart),
-    branchComparison(ids, range, chart),
+    branchComparison(ids, range, chart, { includeAll: leaderboard }),
     inventoryPanel(ids, range),
     alerts(ids, range, today),
     dailyPnl(ids, range, chart),
@@ -97,9 +102,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const series = trendLocs.map((l) => ({ key: l.id, label: l.name }));
   const icon = { critical: CircleAlert, serious: AlertTriangle, warning: Info };
 
+  // Leaderboard ranking (with growth vs the comparison period).
+  const prevBoard = leaderboard ? await branchComparison(ids, prev, chart, { includeAll: true }) : [];
+  const totalSales = branches.reduce((a, b) => a + (b.netSales > 0n ? b.netSales : 0n), 0n);
+  const board = branches
+    .map((b) => {
+      const p = prevBoard.find((x) => x.id === b.id);
+      const growth = p && p.netSales > 0n ? (Number(b.netSales - p.netSales) / Number(p.netSales)) * 100 : null;
+      return { ...b, growth, share: totalSales > 0n && b.netSales > 0n ? (Number(b.netSales) / Number(totalSales)) * 100 : null };
+    })
+    .sort((a, b) => {
+      const key = (x: typeof a) => (rankBy === "sales" ? Number(x.netSales) : rankBy === "margin" ? (x.marginPct ?? -Infinity) : rankBy === "growth" ? (x.growth ?? -Infinity) : Number(x.netProfit));
+      return key(b) - key(a);
+    });
+  const RANK_LABEL = { profit: "Net profit", sales: "Net sales", margin: "Margin", growth: "Sales growth" } as const;
+  const TYPE_LABEL: Record<string, string> = { BRANCH: "Branch", COMMISSARY: "Commissary", OFFICE: "Head office" };
+
   return (
     <>
-      <PageHeader title="Dashboard" description={`${location === "all" ? "All locations" : allowed.find((l) => l.id === location)?.name} · ${range.from === range.to ? range.from : `${range.from} to ${range.to}`} · compared with ${prev.from} to ${prev.to}`} />
+      <PageHeader title="Dashboard" description={`${leaderboard ? "Leaderboard · all locations" : location === "all" ? "All locations" : allowed.find((l) => l.id === location)?.name} · ${range.from === range.to ? range.from : `${range.from} to ${range.to}`} · compared with ${prev.from} to ${prev.to}`} />
       <DashboardFilters preset={preset} from={range.from} to={range.to} location={location} compare={compare} locations={allowed.map((l) => ({ id: l.id, name: l.name }))} today={today} />
 
       <section aria-label="Key figures" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -128,6 +149,74 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <span className="text-xs text-muted-foreground">as of {range.to}</span>
         </Card>
       </section>
+
+      {leaderboard && (
+        <section aria-labelledby="leaderboard" className="mt-8 rounded-lg border bg-card p-4">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 id="leaderboard" className="text-2xl">
+                Leaderboard
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Every location ranked by {RANK_LABEL[rankBy].toLowerCase()}
+                {board[0] ? (
+                  <>
+                    {" "}
+                    · top performer: <b className="text-foreground">{board[0].name}</b>
+                  </>
+                ) : null}
+              </p>
+            </div>
+            <nav aria-label="Rank by" className="flex overflow-hidden rounded-md border text-sm">
+              {(Object.keys(RANK_LABEL) as (keyof typeof RANK_LABEL)[]).map((k) => (
+                <Link
+                  key={k}
+                  href={`/dashboard?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter((e): e is [string, string] => typeof e[1] === "string")), rank: k })}`}
+                  aria-current={rankBy === k ? "true" : undefined}
+                  className={cn("px-3 py-1.5", rankBy === k ? "bg-foreground text-background" : "hover:bg-muted")}
+                >
+                  {RANK_LABEL[k]}
+                </Link>
+              ))}
+            </nav>
+          </div>
+          <SimpleTable
+            head={["#", "Location", "Net sales", "Share of sales", "Expenses", "Net profit", "Margin", "Pax", "Spend / pax", "Food cost", "Labor", `Sales vs ${compare === "yoy" ? "last year" : "prev."}`]}
+            rows={board.map((b, i) => [
+              <span key="r" className={cn("font-display text-lg", i === 0 && "text-success")}>
+                {i + 1}
+              </span>,
+              <span key="l">
+                <Link href={`/dashboard?${new URLSearchParams({ preset, from: range.from, to: range.to, location: b.id, compare })}`} className="font-semibold underline underline-offset-4">
+                  {b.name}
+                </Link>
+                <span className="block text-xs text-muted-foreground">{TYPE_LABEL[b.type] ?? b.type}</span>
+              </span>,
+              formatPeso(b.netSales),
+              b.share === null ? "—" : `${b.share.toFixed(1)}%`,
+              formatPeso(b.expenses),
+              <span key="p" className={b.netProfit < 0n ? "text-destructive" : ""}>
+                {formatPeso(b.netProfit)}
+              </span>,
+              pct(b.marginPct),
+              b.pax.toLocaleString("en-PH"),
+              b.avgPerPax === null ? "—" : formatPeso(b.avgPerPax),
+              pct(b.foodCostPct),
+              pct(b.laborCostPct),
+              b.growth === null ? "—" : (
+                <span key="g" className={b.growth >= 0 ? "text-success" : "text-destructive"}>
+                  {b.growth >= 0 ? "+" : ""}
+                  {b.growth.toFixed(1)}%
+                </span>
+              ),
+            ])}
+            empty="No locations in view."
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Commissary and Head office don&apos;t sell to customers, so they rank on their costs (shown as a loss). Click a location to open its own dashboard.
+          </p>
+        </section>
+      )}
 
       <div className="mt-8 grid gap-8 lg:grid-cols-5">
         <section aria-labelledby="pnl-trend" className="rounded-lg border bg-card p-4 lg:col-span-3">
@@ -239,7 +328,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </section>
       </div>
 
-      {branches.length > 1 && (
+      {!leaderboard && branches.length > 1 && (
         <section aria-labelledby="branches" className="mt-8">
           <h2 id="branches" className="mb-3 text-2xl">
             Branch comparison
