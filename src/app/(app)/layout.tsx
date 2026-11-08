@@ -3,14 +3,17 @@ import { Brand, SidebarNav } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { IdleLogout } from "@/components/shell/idle-logout";
 import { visibleNav } from "@/components/shell/nav-items";
-import { getActiveLocationId, requireUser } from "@/server/auth/session";
+import { cookies } from "next/headers";
+import { ALL_LOCATIONS, getActiveLocationId, LEADERBOARD, LOCATION_COOKIE, requireUser } from "@/server/auth/session";
 import { PASSWORD_IDLE_MINUTES } from "@/auth.config";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const session = await auth();
   const sections = visibleNav((p) => user.access.canAnywhere(p));
-  const activeLocationId = await getActiveLocationId(user);
+  const active = await getActiveLocationId(user);
+  // The switcher shows Leaderboard as chosen; pages read it as all locations.
+  const activeLocationId = active === ALL_LOCATIONS && (await cookies()).get(LOCATION_COOKIE)?.value === LEADERBOARD ? LEADERBOARD : active;
   const idleMinutes =
     session?.idleUntil && session.method === "pin"
       ? Math.max(1, Math.round((session.idleUntil - Date.now()) / 60_000))
