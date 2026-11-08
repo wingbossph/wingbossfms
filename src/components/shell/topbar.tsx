@@ -114,6 +114,7 @@ function LocationSwitcher({
         className="h-9 max-w-[60vw] rounded-md border border-sidebar-border bg-black px-2 font-semibold uppercase tracking-wider text-white"
       >
         <option value="all">All locations (consolidated)</option>
+        <option value="leaderboard">Leaderboard (rank all locations)</option>
         {locations.map((l) => (
           <option key={l.id} value={l.id}>
             {l.name}

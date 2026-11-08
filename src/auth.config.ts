@@ -54,7 +54,8 @@ export const authConfig = {
         const loc = request.cookies.get("wb_loc")?.value;
         if (request.method === "GET" && loc && !pathname.startsWith("/api/") && !request.nextUrl.searchParams.has("location")) {
           const url = request.nextUrl.clone();
-          url.searchParams.set("location", loc);
+          // "leaderboard" is a dashboard view; other pages show all locations for it.
+          url.searchParams.set("location", loc === "leaderboard" && pathname !== "/dashboard" ? "all" : loc);
           return NextResponse.rewrite(url);
         }
         return true;

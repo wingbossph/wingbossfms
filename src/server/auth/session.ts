@@ -16,6 +16,8 @@ export class AuthorizationError extends Error {
 
 export const LOCATION_COOKIE = "wb_loc";
 export const ALL_LOCATIONS = "all";
+/** Top-bar choice: the dashboard ranks every location; everywhere else it means all locations. */
+export const LEADERBOARD = "leaderboard";
 
 export type CurrentUser = {
   id: string;
@@ -111,7 +113,7 @@ export async function requirePagePermission(...anyOf: string[]): Promise<Current
 export async function getActiveLocationId(user: CurrentUser): Promise<string> {
   const wanted = (await cookies()).get(LOCATION_COOKIE)?.value;
   const ids = user.locations.map((l) => l.id);
-  if (wanted === ALL_LOCATIONS && ids.length > 1) return ALL_LOCATIONS;
+  if ((wanted === ALL_LOCATIONS || wanted === LEADERBOARD) && ids.length > 1) return ALL_LOCATIONS;
   if (wanted && ids.includes(wanted)) return wanted;
   return ids[0] ?? ALL_LOCATIONS;
 }

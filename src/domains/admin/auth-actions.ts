@@ -4,7 +4,7 @@ import { AuthError } from "next-auth";
 import { cookies } from "next/headers";
 import { auth, signIn, signOut } from "@/auth";
 import type { ActionState } from "@/server/action";
-import { ALL_LOCATIONS, getCurrentUser, LOCATION_COOKIE } from "@/server/auth/session";
+import { ALL_LOCATIONS, getCurrentUser, LEADERBOARD, LOCATION_COOKIE } from "@/server/auth/session";
 
 function safeNext(next: FormDataEntryValue | null): string {
   const value = typeof next === "string" ? next : "";
@@ -56,7 +56,7 @@ export async function logout() {
 export async function setActiveLocation(locationId: string) {
   const user = await getCurrentUser();
   if (!user) return;
-  const valid = locationId === ALL_LOCATIONS || user.locations.some((l) => l.id === locationId);
+  const valid = locationId === ALL_LOCATIONS || locationId === LEADERBOARD || user.locations.some((l) => l.id === locationId);
   if (!valid) return;
   (await cookies()).set(LOCATION_COOKIE, locationId, { httpOnly: true, sameSite: "lax", path: "/" });
 }
