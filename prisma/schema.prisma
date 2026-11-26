@@ -99,6 +99,8 @@ model Location {
   productionBatches   ProductionBatch[]
   transfersOut        Transfer[]               @relation("TransferFrom")
   transfersIn         Transfer[]               @relation("TransferTo")
+  grabDailySales      GrabDailySale[]
+  grabRemittances     GrabRemittance[]
   transferPresetsFrom TransferPreset[]         @relation("PresetFrom")
   transferPresetsTo   TransferPreset[]         @relation("PresetTo")
   employeeAssignments EmployeeAssignment[]
@@ -2059,4 +2061,36 @@ model JobRun {
   finishedAt DateTime?
   ok         Boolean?
   details    Json?
+}
+
+/// Grab gross sales for a branch-day, tracked apart from the sales report
+/// (not in net sales or cash): Grab deducts its fees before paying out.
+model GrabDailySale {
+  id           String   @id @default(cuid())
+  locationId   String
+  location     Location @relation(fields: [locationId], references: [id])
+  businessDate DateTime @db.Date
+  grossCents   BigInt
+  notes        String?
+  updatedById  String
+  updatedAt    DateTime @updatedAt
+
+  @@unique([locationId, businessDate])
+}
+
+/// A payout received from Grab and the sales days it covers.
+model GrabRemittance {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  remittedOn  DateTime @db.Date
+  periodFrom  DateTime @db.Date
+  periodTo    DateTime @db.Date
+  amountCents BigInt
+  reference   String?
+  notes       String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([locationId, remittedOn])
 }

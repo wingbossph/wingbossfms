@@ -16,6 +16,7 @@ import {
 } from "@/domains/sales/loyverse/import";
 import { SalesEditor } from "./sales-editor";
 import { ShiftExpenses } from "./shift-expenses";
+import { GrabDaily } from "./grab-daily";
 import { expenseCategories } from "@/domains/expenses/queries";
 import { EXPENSE_SOURCES } from "@/domains/expenses/sources";
 import { ShiftClose } from "./shift-close";
@@ -52,6 +53,7 @@ export default async function SalesReportPage({
   if (!can("sales:view") && !can("sales:create")) redirect("/forbidden");
 
   const ymd = report.businessDate.toISOString().slice(0, 10);
+  const grabDay = await db.grabDailySale.findUnique({ where: { locationId_businessDate: { locationId: report.locationId, businessDate: report.businessDate } } });
   const canExpense = can("expenses:create");
   const [dayExpenses, categories, moneyAccounts] = await Promise.all([
     db.expense.findMany({
@@ -264,6 +266,7 @@ export default async function SalesReportPage({
           kind: c.kind,
         }))}
         expensesCents={s(expensesCents)}
+        grabSlot={<GrabDaily locationId={report.locationId} date={ymd} initial={grabDay ? formatPeso(grabDay.grossCents, { symbol: false }) : ""} canEdit={can("sales:create")} />}
         expensesSlot={
           dayExpenses.length > 0 || canExpense ? (
             <ShiftExpenses
