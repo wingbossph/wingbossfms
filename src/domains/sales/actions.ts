@@ -242,3 +242,21 @@ export async function deleteGrabRemittanceAction(id: string): Promise<ActionStat
     return { ok: true, message: "Remittance removed." };
   });
 }
+
+export async function saveFundAction(raw: unknown): Promise<ActionState> {
+  return handleAction(async () => {
+    const actor = await requireActor();
+    const input = z
+      .object({
+        locationId: z.string().min(1),
+        date: ymdField,
+        parts: z.array(z.object({ from: ymdField, to: ymdField.or(z.literal("")), amount: pesoField })).max(31),
+      })
+      .parse(raw);
+    assertCan(actor, "sales:create", input.locationId);
+    const { saveFund } = await import("./fund");
+    await db.$transaction((tx) => saveFund(tx, { locationId: input.locationId, date: input.date, parts: input.parts.map((p) => ({ from: p.from, to: p.to || p.from, amountCents: p.amount })) }, actor.id));
+    revalidatePath("/sales");
+    return { ok: true, message: input.parts.length ? "Fund saved." : "Fund removed." };
+  });
+}
