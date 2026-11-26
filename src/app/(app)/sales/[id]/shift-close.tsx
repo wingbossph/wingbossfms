@@ -18,6 +18,8 @@ export function ShiftClose(props: {
   reportId: string;
   canCount: boolean;
   floatCents: string;
+  /** The day's fund (cash brought in for expenses): prefilled as other cash in. */
+  fundCents?: string;
   cashSalesCents: string;
   cashExpensesCents: string;
   closed: { expected: string; counted: string; overShortCents: string; overShort: string; reason: string } | null;
@@ -25,7 +27,7 @@ export function ShiftClose(props: {
   const router = useRouter();
   const [bills, setBills] = useState<Record<string, string>>({});
   const [coins, setCoins] = useState("");
-  const [otherIn, setOtherIn] = useState("");
+  const [otherIn, setOtherIn] = useState(props.fundCents && props.fundCents !== "0" ? formatPeso(BigInt(props.fundCents), { symbol: false }) : "");
   const [otherOut, setOtherOut] = useState("");
   const [reason, setReason] = useState("");
   const close = useAction(closeShiftAction, { onSuccess: () => router.refresh() });

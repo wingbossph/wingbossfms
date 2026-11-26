@@ -17,6 +17,7 @@ import {
 import { SalesEditor } from "./sales-editor";
 import { ShiftExpenses } from "./shift-expenses";
 import { GrabDaily } from "./grab-daily";
+import { FundBox } from "./fund-box";
 import { expenseCategories } from "@/domains/expenses/queries";
 import { EXPENSE_SOURCES } from "@/domains/expenses/sources";
 import { ShiftClose } from "./shift-close";
@@ -53,6 +54,8 @@ export default async function SalesReportPage({
   if (!can("sales:view") && !can("sales:create")) redirect("/forbidden");
 
   const ymd = report.businessDate.toISOString().slice(0, 10);
+  const fund = await db.salesFund.findUnique({ where: { locationId_businessDate: { locationId: report.locationId, businessDate: report.businessDate } }, include: { sources: { orderBy: { fromDate: "asc" } } } });
+  const fundCents = fund ? fund.sources.reduce((a, x) => a + x.amountCents, 0n) : 0n;
   const grabDay = await db.grabDailySale.findUnique({ where: { locationId_businessDate: { locationId: report.locationId, businessDate: report.businessDate } } });
   const grabRemits = await db.grabRemittance.findMany({ where: { locationId: report.locationId, remittedOn: report.businessDate }, orderBy: { createdAt: "asc" } });
   const canExpense = can("expenses:create");
@@ -267,6 +270,19 @@ export default async function SalesReportPage({
           kind: c.kind,
         }))}
         expensesCents={s(expensesCents)}
+        fundCents={s(fundCents)}
+        fundSlot={
+          <FundBox
+            locationId={report.locationId}
+            date={ymd}
+            canEdit={can("sales:create") && !report.cashCount}
+            initial={(fund?.sources ?? []).map((x) => {
+              const from = x.fromDate.toISOString().slice(0, 10);
+              const to = x.toDate.toISOString().slice(0, 10);
+              return { amount: formatPeso(x.amountCents, { symbol: false }), from, to: to === from ? "" : to };
+            })}
+          />
+        }
         grabSlot={<GrabDaily locationId={report.locationId} date={ymd} initial={grabDay ? formatPeso(grabDay.grossCents, { symbol: false }) : ""} remittances={grabRemits.map((r) => ({ id: r.id, amountCents: s(r.amountCents), periodFrom: r.periodFrom.toISOString().slice(0, 10), periodTo: r.periodTo.toISOString().slice(0, 10) }))} canEdit={can("sales:create")} />}
         expensesSlot={
           dayExpenses.length > 0 || canExpense ? (
@@ -313,6 +329,7 @@ export default async function SalesReportPage({
           reportId={report.id}
           canCount={can("cash:count")}
           floatCents={s(report.location.drawerFloatCents)}
+          fundCents={s(fundCents)}
           cashSalesCents={s(activity.cashSalesCents)}
           cashExpensesCents={s(activity.cashExpensesCents)}
           closed={

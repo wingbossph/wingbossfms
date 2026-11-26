@@ -81,8 +81,11 @@ type Props = {
   channels: Channel[];
   /** The day's expenses section (rendered after payments) and their total. */
   expensesSlot?: React.ReactNode;
-  /** Grab daily sales (kept out of the totals), rendered after payments. */
+  /** Grab daily sales (kept out of the totals), beside the sales. */
   grabSlot?: React.ReactNode;
+  /** The day's Fund box (above the sales) and its total, added to cash on hand. */
+  fundSlot?: React.ReactNode;
+  fundCents?: string;
   expensesCents?: string;
 };
 
@@ -106,6 +109,8 @@ export function SalesEditor({
   channels,
   expensesSlot,
   grabSlot,
+  fundSlot,
+  fundCents = "0",
   expensesCents = "0",
 }: Props) {
   const router = useRouter();
@@ -230,7 +235,8 @@ export function SalesEditor({
   const nonCashCents = Object.entries(st.payments)
     .filter(([id]) => !cashChannel.has(id))
     .reduce((a, [, p]) => a + cents(p.amount), 0n);
-  const netCashCents = totals.netCents - nonCashCents - BigInt(expensesCents);
+  // The fund is cash brought in from other days to pay expenses: it adds to the drawer.
+  const netCashCents = totals.netCents - nonCashCents - BigInt(expensesCents) + BigInt(fundCents);
   const byCategory = products.some((p) => p.category);
   const groupOf = (p: Product) => (byCategory ? p.category || "Other" : p.type);
   const groups = byCategory
@@ -318,6 +324,7 @@ export function SalesEditor({
             ))}
           </div>
         </div>
+        {fundSlot}
         {st.mode === "total" ? (
           <div className="flex flex-wrap items-start gap-4">
           <div className="grid max-w-xl flex-1 gap-3 rounded-lg border p-4 sm:grid-cols-2">
@@ -761,9 +768,14 @@ export function SalesEditor({
               Cash Drawer expenses <b>−{formatPeso(BigInt(expensesCents))}</b>
             </span>
           )}
+          {BigInt(fundCents) > 0n && (
+            <span>
+              Fund <b>+{formatPeso(BigInt(fundCents))}</b>
+            </span>
+          )}
           <span
             className="text-base"
-            title="Net sales less online payments and Cash Drawer expenses: the cash that should be in the drawer"
+            title="Net sales less online payments and Cash Drawer expenses, plus the fund: the cash that should be in the drawer"
           >
             <span className="font-semibold uppercase tracking-wide">
               Cash on hand

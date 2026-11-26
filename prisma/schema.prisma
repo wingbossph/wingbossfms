@@ -101,6 +101,7 @@ model Location {
   transfersIn         Transfer[]               @relation("TransferTo")
   grabDailySales      GrabDailySale[]
   grabRemittances     GrabRemittance[]
+  salesFunds          SalesFund[]
   transferPresetsFrom TransferPreset[]         @relation("PresetFrom")
   transferPresetsTo   TransferPreset[]         @relation("PresetTo")
   employeeAssignments EmployeeAssignment[]
@@ -2093,4 +2094,28 @@ model GrabRemittance {
   createdAt   DateTime @default(now())
 
   @@index([locationId, remittedOn])
+}
+
+/// Cash brought into a day's drawer as a fund for paying expenses, taken
+/// from the cash on hand of earlier sales days (possibly non-consecutive).
+model SalesFund {
+  id           String       @id @default(cuid())
+  locationId   String
+  location     Location     @relation(fields: [locationId], references: [id])
+  businessDate DateTime     @db.Date
+  updatedById  String
+  updatedAt    DateTime     @updatedAt
+  sources      FundSource[]
+
+  @@unique([locationId, businessDate])
+}
+
+/// One part of a fund: an amount and the sales day(s) it came from.
+model FundSource {
+  id          String    @id @default(cuid())
+  fundId      String
+  fund        SalesFund @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  fromDate    DateTime  @db.Date
+  toDate      DateTime  @db.Date
+  amountCents BigInt
 }
