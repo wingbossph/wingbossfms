@@ -10,6 +10,8 @@ import { formatBusinessDate, manilaDateString, toDbDate } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import { SalesTable, type SalesRow } from "./sales-table";
 import { StartSalesForm } from "./start-sales-form";
+import { GrabPanel } from "./grab-panel";
+import { grabSummary } from "@/domains/sales/grab";
 
 export const metadata = { title: "Sales" };
 
@@ -40,6 +42,9 @@ export default async function SalesPage({
   const cashiers = await db.user.findMany({ where: { id: { in: [...new Set(reports.map((r) => r.cashierUserId))] } }, select: { id: true, name: true } });
   const cashierName = new Map(cashiers.map((c) => [c.id, c.name]));
 
+  const grab = await grabSummary(db, locationIds, from, to);
+  const grabDays = new Map((await db.grabDailySale.findMany({ where: { locationId: { in: locationIds }, businessDate: { gte: toDbDate(from), lte: toDbDate(to) } } })).map((g) => [`${g.locationId}:${g.businessDate.toISOString().slice(0, 10)}`, g.grossCents]));
+
   const rows: SalesRow[] = reports.map((r) => ({
     id: r.id,
     date: formatBusinessDate(r.businessDate),
@@ -53,6 +58,8 @@ export default async function SalesPage({
     status: r.status === "POSTED" && r.approvedAt ? "Reviewed" : STATUS[r.status],
     cash: r.cashCount ? (r.cashCount.overShortCents === 0n ? "Balanced" : `${r.cashCount.overShortCents > 0n ? "Over" : "Short"} ${formatPeso(r.cashCount.overShortCents < 0n ? -r.cashCount.overShortCents : r.cashCount.overShortCents)}`) : r.status === "POSTED" ? "Not closed" : "—",
     cashier: cashierName.get(r.cashierUserId) ?? "",
+    // Shift 1 shows the day's Grab gross (tracked per day, not per shift).
+    grab: r.shiftNo === 1 && grabDays.get(`${r.locationId}:${r.businessDate.toISOString().slice(0, 10)}`) ? formatPeso(grabDays.get(`${r.locationId}:${r.businessDate.toISOString().slice(0, 10)}`)!) : "",
   }));
 
   const createIds = locationsWithAny(user, "sales:create");
@@ -97,6 +104,16 @@ export default async function SalesPage({
       <p className="mb-2 text-sm text-muted-foreground">
         {formatBusinessDate(toDbDate(from))} – {formatBusinessDate(toDbDate(to))}: submitted net sales <b className="text-foreground">{formatPeso(totalNet)}</b> · {totalPax.toLocaleString()} pax
       </p>
+      <GrabPanel
+        grossCents={grab.grossCents.toString()}
+        days={grab.days}
+        remittedCents={grab.remittedCents.toString()}
+        remittances={grab.remittances.map((r) => ({ ...r, amountCents: r.amountCents.toString(), coveredGrossCents: r.coveredGrossCents.toString(), deductedCents: r.deductedCents === null ? null : r.deductedCents.toString() }))}
+        locations={createLocations.map((l) => ({ id: l.id, name: l.name }))}
+        defaultLocationId={createIds.includes(active) ? active : (createLocations[0]?.id ?? "")}
+        today={today}
+        canEdit={createLocations.length > 0}
+      />
       <SalesTable data={rows} />
     </>
   );

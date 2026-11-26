@@ -18,6 +18,8 @@ export type SalesRow = {
   status: string;
   cash: string;
   cashier: string;
+  /** The day's Grab gross (not in net sales). */
+  grab: string;
 };
 
 const columns: ColumnDef<SalesRow, unknown>[] = [
@@ -37,6 +39,7 @@ const columns: ColumnDef<SalesRow, unknown>[] = [
   { accessorKey: "cashier", header: "Cashier" },
   { accessorKey: "pax", header: "Pax", meta: { align: "right" } },
   { accessorKey: "netCents", header: "Net sales", cell: ({ row }) => row.original.net, meta: { align: "right", exportValue: (r) => (r.netCents / 100).toFixed(2) } },
+  { accessorKey: "grab", header: "Grab (gross, separate)", cell: ({ row }) => <span className="text-muted-foreground">{row.original.grab}</span>, meta: { align: "right" } },
   {
     accessorKey: "status",
     header: "Status",

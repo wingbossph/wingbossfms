@@ -81,6 +81,8 @@ type Props = {
   channels: Channel[];
   /** The day's expenses section (rendered after payments) and their total. */
   expensesSlot?: React.ReactNode;
+  /** Grab daily sales (kept out of the totals), rendered after payments. */
+  grabSlot?: React.ReactNode;
   expensesCents?: string;
 };
 
@@ -103,6 +105,7 @@ export function SalesEditor({
   discountTypes,
   channels,
   expensesSlot,
+  grabSlot,
   expensesCents = "0",
 }: Props) {
   const router = useRouter();
@@ -720,6 +723,8 @@ export function SalesEditor({
           })}
         </div>
       </section>
+
+      {grabSlot}
 
       {expensesSlot}
 

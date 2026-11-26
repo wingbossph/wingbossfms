@@ -8,6 +8,7 @@ import { writeAudit } from "@/server/audit";
 import { handleAction, UserFacingError, type ActionState } from "@/server/action";
 import { assertCan, requireActor } from "@/server/auth/session";
 import { manilaDateString } from "@/lib/dates";
+import { pesoField } from "@/domains/admin/schemas";
 import { cashCountSchema, openReportSchema, reopenSchema, salesDraftSchema } from "./schemas";
 import { closeShift, openDraft, reopenReport, saveDraft, submitReport } from "./service";
 import { commitImport, previewImport, type ImportPreview } from "./loyverse/import";
@@ -184,5 +185,60 @@ export async function syncLoyverseAction(locationId: string): Promise<ActionStat
     const r = await syncLoyverse(locationId, user.id);
     revalidatePath("/sales");
     return { ok: true, message: r.fetched ? `Fetched ${r.fetched} receipt(s): ${r.created} new, ${r.duplicates} already imported.` : "No new receipts in Loyverse." };
+  });
+}
+
+// ── Grab (tracked outside the sales totals) ────────────────────────────────
+
+const ymdField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export async function saveGrabDailySaleAction(raw: unknown): Promise<ActionState> {
+  return handleAction(async () => {
+    const actor = await requireActor();
+    const input = z.object({ locationId: z.string().min(1), date: ymdField, gross: pesoField }).parse(raw);
+    assertCan(actor, "sales:create", input.locationId);
+    if (input.date > manilaDateString()) throw new UserFacingError("The date can't be in the future.");
+    const { setGrabDailySale } = await import("./grab");
+    await db.$transaction((tx) => setGrabDailySale(tx, { locationId: input.locationId, date: input.date, grossCents: input.gross }, actor.id));
+    revalidatePath("/sales");
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Grab daily sales saved." };
+  });
+}
+
+export async function addGrabRemittanceAction(raw: unknown): Promise<ActionState> {
+  return handleAction(async () => {
+    const actor = await requireActor();
+    const input = z
+      .object({
+        locationId: z.string().min(1),
+        remittedOn: ymdField,
+        periodFrom: ymdField,
+        periodTo: ymdField,
+        amount: pesoField,
+        reference: z.string().trim().max(80).optional().default(""),
+        notes: z.string().trim().max(300).optional().default(""),
+      })
+      .parse(raw);
+    assertCan(actor, "sales:create", input.locationId);
+    const { addGrabRemittance } = await import("./grab");
+    await db.$transaction((tx) => addGrabRemittance(tx, { ...input, amountCents: input.amount }, actor.id));
+    revalidatePath("/sales");
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Grab remittance recorded." };
+  });
+}
+
+export async function deleteGrabRemittanceAction(id: string): Promise<ActionState> {
+  return handleAction(async () => {
+    const actor = await requireActor();
+    const r = await db.grabRemittance.findUnique({ where: { id } });
+    if (!r) throw new UserFacingError("Remittance not found.");
+    assertCan(actor, "sales:create", r.locationId);
+    const { deleteGrabRemittance } = await import("./grab");
+    await db.$transaction((tx) => deleteGrabRemittance(tx, id, actor.id));
+    revalidatePath("/sales");
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Remittance removed." };
   });
 }

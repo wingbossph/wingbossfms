@@ -10,7 +10,8 @@ import { db } from "@/server/db";
 import { loadChart } from "@/domains/reports/financials";
 import { alerts, branchComparison, comparisonRange, dailyPnl, expensesByGroup, inventoryPanel, kpis, moneyIn, presetRange, salesTrend, type Kpis } from "@/domains/dashboard/metrics";
 import { datesBetween } from "@/domains/payroll/compute";
-import { manilaDateString } from "@/lib/dates";
+import { grabSummary } from "@/domains/sales/grab";
+import { formatBusinessDate, manilaDateString } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import { cn } from "cn";
 import { DashboardFilters } from "./dashboard-filters";
@@ -102,6 +103,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const series = trendLocs.map((l) => ({ key: l.id, label: l.name }));
   const icon = { critical: CircleAlert, serious: AlertTriangle, warning: Info };
 
+  const grab = await grabSummary(db, ids, range.from, range.to);
+  const lastRemit = grab.remittances[0];
+
   // Leaderboard ranking (with growth vs the comparison period).
   const prevBoard = leaderboard ? await branchComparison(ids, prev, chart, { includeAll: true }) : [];
   const totalSales = branches.reduce((a, b) => a + (b.netSales > 0n ? b.netSales : 0n), 0n);
@@ -149,6 +153,44 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <span className="text-xs text-muted-foreground">as of {range.to}</span>
         </Card>
       </section>
+
+      {(grab.grossCents > 0n || grab.remittances.length > 0) && (
+        <section aria-labelledby="grab-dash" className="mt-4 rounded-lg border border-dashed p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="grab-dash" className="text-xl">
+              Grab <span className="text-sm font-normal text-muted-foreground">(separate: not in the sales totals above)</span>
+            </h2>
+            <Link href={`/sales${q()}`} className="text-sm underline underline-offset-4">
+              Remittances
+            </Link>
+          </div>
+          <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">Grab daily sales (gross)</dt>
+              <dd className="font-display text-2xl tabular-nums">{formatPeso(grab.grossCents)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Grab remittance received</dt>
+              <dd className="font-display text-2xl tabular-nums">{formatPeso(grab.remittedCents)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Latest remittance</dt>
+              <dd className="tabular-nums">
+                {lastRemit ? (
+                  <>
+                    <b>{formatPeso(lastRemit.amountCents)}</b> on {formatBusinessDate(new Date(`${lastRemit.remittedOn}T00:00:00Z`))}
+                    <span className="block text-xs text-muted-foreground">
+                      covers {formatBusinessDate(new Date(`${lastRemit.periodFrom}T00:00:00Z`))} – {formatBusinessDate(new Date(`${lastRemit.periodTo}T00:00:00Z`))}
+                    </span>
+                  </>
+                ) : (
+                  "—"
+                )}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       {leaderboard && (
         <section aria-labelledby="leaderboard" className="mt-8 rounded-lg border bg-card p-4">
