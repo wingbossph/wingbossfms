@@ -319,7 +319,8 @@ export function SalesEditor({
           </div>
         </div>
         {st.mode === "total" ? (
-          <div className="grid max-w-xl gap-3 rounded-lg border p-4 sm:grid-cols-2">
+          <div className="flex flex-wrap items-start gap-4">
+          <div className="grid max-w-xl flex-1 gap-3 rounded-lg border p-4 sm:grid-cols-2">
             <label className="space-y-1 text-sm font-medium">
               <span>Gross sales for the day ₱</span>
               <Input
@@ -364,8 +365,11 @@ export function SalesEditor({
               won&apos;t have item detail for this day.
             </p>
           </div>
+          {grabSlot}
+          </div>
         ) : (
           <div className="space-y-6">
+            {grabSlot}
             {groups.map((g) => (
               <div key={g}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -723,8 +727,6 @@ export function SalesEditor({
           })}
         </div>
       </section>
-
-      {grabSlot}
 
       {expensesSlot}
 
