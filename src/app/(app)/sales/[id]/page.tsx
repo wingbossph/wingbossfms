@@ -54,6 +54,7 @@ export default async function SalesReportPage({
 
   const ymd = report.businessDate.toISOString().slice(0, 10);
   const grabDay = await db.grabDailySale.findUnique({ where: { locationId_businessDate: { locationId: report.locationId, businessDate: report.businessDate } } });
+  const grabRemits = await db.grabRemittance.findMany({ where: { locationId: report.locationId, remittedOn: report.businessDate }, orderBy: { createdAt: "asc" } });
   const canExpense = can("expenses:create");
   const [dayExpenses, categories, moneyAccounts] = await Promise.all([
     db.expense.findMany({
@@ -266,7 +267,7 @@ export default async function SalesReportPage({
           kind: c.kind,
         }))}
         expensesCents={s(expensesCents)}
-        grabSlot={<GrabDaily locationId={report.locationId} date={ymd} initial={grabDay ? formatPeso(grabDay.grossCents, { symbol: false }) : ""} canEdit={can("sales:create")} />}
+        grabSlot={<GrabDaily locationId={report.locationId} date={ymd} initial={grabDay ? formatPeso(grabDay.grossCents, { symbol: false }) : ""} remittances={grabRemits.map((r) => ({ id: r.id, amountCents: s(r.amountCents), periodFrom: r.periodFrom.toISOString().slice(0, 10), periodTo: r.periodTo.toISOString().slice(0, 10) }))} canEdit={can("sales:create")} />}
         expensesSlot={
           dayExpenses.length > 0 || canExpense ? (
             <ShiftExpenses
